@@ -23,14 +23,12 @@ def get_new_image():
         gal_soup = BeautifulSoup(r_gal.text, 'html.parser')
         
         posted = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
-        # Finding the raw image URL
         valid_imgs = [img.get('data-src') or img.get('src') for img in gal_soup.find_all('img') if "pornpics.com" in (img.get('data-src') or img.get('src', ''))]
         
         new_imgs = [u if u.startswith('http') else "https:" + u for u in valid_imgs if u not in posted]
         if new_imgs:
             img_url = random.choice(new_imgs)
             print(f"SUCCESS: Image Found -> {img_url}")
-            # Saving to history
             with open(HISTORY_FILE, "a") as f: f.write(img_url + "\n")
             return img_url
         return None
@@ -39,11 +37,10 @@ def get_new_image():
         return None
 
 def post_to_forum(p, direct_img_url):
-    print("--- Step 2: Posting Direct URL to Forum ---")
+    print("--- Step 2: Posting to Forum ---")
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
-    # Load Cookies from Environment
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw:
         print("CRITICAL: EX_COOKIES missing!")
@@ -51,47 +48,58 @@ def post_to_forum(p, direct_img_url):
         
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
-    page.set_default_timeout(90000)
+    page.set_default_timeout(60000)
     
     try:
-        print(f"Navigating to {THREAD_REPLY_URL}...")
+        print(f"Opening thread...")
         page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         
-        # Editor Check
         editor = page.locator('.fr-element').first
         editor.wait_for(state="visible")
         print("Editor ready.")
 
-        # 1. Open "Insert Image" toolbar option
-        print("Opening Image Insert Popup...")
+        # 1. Click Image Toolbar Button
+        print("Clicking Toolbar Image Button...")
         page.click('#insertImage-1', force=True)
-        
-        # 2. Fill the direct PornPics URL
-        url_input = page.locator('input.fr-link-input, input[placeholder*="URL"]').first
-        url_input.wait_for(state="visible", timeout=15000)
-        url_input.fill(direct_img_url)
-        print("Direct URL Filled.")
+        time.sleep(2)
 
-        # 3. Insert into editor
+        # 2. Click "By URL" Icon inside the popup (IMPORTANT STEP)
+        print("Clicking 'By URL' option...")
+        # Froala mein By URL waale button ka command 'imageByURL' hota hai
+        by_url_btn = page.locator('button[data-cmd="imageByURL"]').first
+        if by_url_btn.is_visible():
+            by_url_btn.click()
+        else:
+            # Agar button nahi mila, toh ho sakta hai URL box pehle se khula ho
+            print("By URL button not found, checking for input box...")
+
+        # 3. Fill URL Input
+        print("Filling Image URL...")
+        url_input = page.locator('input.fr-link-input, input[placeholder*="URL"], input[name="src"]').first
+        url_input.wait_for(state="visible", timeout=20000)
+        url_input.fill(direct_img_url)
+
+        # 4. Confirm Insert
+        print("Confirming Insert...")
         page.keyboard.press("Enter")
         time.sleep(5) 
 
-        # 4. Finalize message and post
-        print("Adding caption and submitting...")
+        # 5. Finalize message and submit
+        print("Adding message and submitting...")
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type("\n\nLatest Desi Update! 🔥\nEnjoy direct from source.")
+        page.keyboard.type("\n\nFresh Desi Update! 🔥")
         
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
         page.wait_for_timeout(10000)
-        page.screenshot(path="direct_post_check.png")
+        page.screenshot(path="final_check.png")
         print("--- BOT TASK FINISHED SUCCESSFULLY ---")
         
     except Exception as e:
         print(f"Forum Error: {e}")
-        page.screenshot(path="error_debug_direct.png")
+        page.screenshot(path="error_debug.png")
     finally:
         browser.close()
 
@@ -100,5 +108,3 @@ if __name__ == "__main__":
         img_url = get_new_image()
         if img_url:
             post_to_forum(playwright, img_url)
-        else:
-            print("No new image found to post.")
