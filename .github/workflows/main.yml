@@ -2,8 +2,10 @@ name: Hourly Poster image
 
 on:
   schedule:
-    # Har 20 minute mein automatic trigger hoga
-    - cron: '*/20 * * * *'
+    - cron: '*/20 * * * *' # Automatic har 20 minute mein
+  push:
+    branches:
+      - main          # Code save karte hi apne aap run hoga
 
 jobs:
   run-bot:
