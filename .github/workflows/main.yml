@@ -2,10 +2,11 @@ name: Hourly Poster image
 
 on:
   schedule:
-    - cron: '*/20 * * * *' # Automatic har 20 minute mein
+    - cron: '*/20 * * * *' # Har 20 minute mein automatically chalega
   push:
     branches:
-      - main          # Code save karte hi apne aap run hoga
+      - main           # Code push karte hi run hoga
+  workflow_dispatch:   # Manual run karne ka button bhi milega
 
 jobs:
   run-bot:
@@ -23,8 +24,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install playwright pillow requests beautifulsoup4
-          python -m playwright install chromium
+          pip install -r requirements.txt
+          # Ye niche wali line bahut zaruri hai GitHub Actions ke liye
+          python -m playwright install chromium --with-deps 
 
       - name: Run Bot
         env:
@@ -38,7 +40,9 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          # Pehle changes pull kar lo taaki conflict na aaye
+          git pull origin main || echo "Nothing to pull"
           touch posted_urls.txt
           git add posted_urls.txt
-          git commit -m "Update history" || echo "No changes"
-          git push || echo "No changes"
+          git commit -m "Update history [skip ci]" || echo "No changes"
+          git push origin main || echo "No changes to push"
