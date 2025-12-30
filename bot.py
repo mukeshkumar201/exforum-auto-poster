@@ -1,6 +1,6 @@
 import os, requests, time, random, json
 from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright
 
 # --- Configuration ---
@@ -35,47 +35,27 @@ def get_new_image():
     except: return None
 
 def add_watermark(url):
-    print("--- Step: Watermarking image (Size adjusted to 8%) ---")
+    print("--- Step: Watermarking image ---")
     try:
         img_data = requests.get(url).content
         with open('img.jpg', 'wb') as f: f.write(img_data)
         img = Image.open('img.jpg').convert("RGB")
         draw = ImageDraw.Draw(img)
         w, h = img.size
-        
-        # --- Font Setup: Size ko 8% height tak kiya (Perfect Balance) ---
-        fs = int(h * 0.08) 
-        try:
-            # GitHub Actions/Linux environment standard font
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
-        except:
-            font = ImageFont.load_default()
-
-        # Text dimensions for positioning
-        bbox = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        
-        # Margin thoda badhaya taaki kone se thoda hat kar dikhe
-        pos = (w - tw - 50, h - th - 50)
-
-        # Shadow effect (Thoda light stroke)
+        fs = int(h * 0.05)
+        pos = (w - (len(WATERMARK_TEXT) * (fs // 2)) - 30, h - fs - 30)
         for adj in range(-1, 2):
-            for b in range(-1, 2): 
-                draw.text((pos[0]+adj, pos[1]+b), WATERMARK_TEXT, fill="black", font=font)
-        
-        # Main Text
-        draw.text(pos, WATERMARK_TEXT, fill="white", font=font)
-        
+            for b in range(-1, 2): draw.text((pos[0]+adj, pos[1]+b), WATERMARK_TEXT, fill="black")
+        draw.text(pos, WATERMARK_TEXT, fill="white")
         img.save('final.jpg')
-        print(f"Watermark applied successfully with font size: {fs}px")
         return True
-    except Exception as e:
-        print(f"Watermark Error: {e}")
-        return False
+    except: return False
 
 def upload_anonymous():
+    """Bina kisi API key ke image upload karne ke liye (Catbox/File.io fallback)"""
     print("--- Step: Hosting image anonymously ---")
     try:
+        # Using Catbox.moe for stable anonymous hosting
         url = "https://catbox.moe/user/api.php"
         data = {"reqtype": "fileupload"}
         files = {"fileToUpload": open("final.jpg", "rb")}
@@ -103,10 +83,12 @@ def post_to_forum(image_link):
             print("--- Navigating to Thread ---")
             page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
             
+            # Editor check
             editor = page.locator('.fr-element')
             editor.wait_for(state="visible")
 
             print("--- Inserting Content ---")
+            # Image Link + Text Message
             content = f"[IMG]{image_link}[/IMG]\n\nFresh Update! 🔥\nCheck: {WATERMARK_TEXT}"
             
             editor.click()
