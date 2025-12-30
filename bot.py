@@ -13,6 +13,15 @@ WATERMARK_TEXT = "freepornx.site"
 PORN_SOURCE = "https://www.pornpics.com/tags/desi/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
+# --- Helper: Cleanup Files ---
+def cleanup_files():
+    for f in ['img.jpg', 'final.jpg']:
+        if os.path.exists(f):
+            try:
+                os.remove(f)
+            except:
+                pass
+
 # --- Step 1: Scraping ---
 def get_new_image():
     print(f"--- Step 1: Scraping Image from {PORN_SOURCE} ---")
@@ -47,6 +56,7 @@ def get_new_image():
 def add_watermark(url):
     print("--- Step 2: Watermarking ---")
     try:
+        cleanup_files()
         r = requests.get(url, timeout=30)
         with open('img.jpg', 'wb') as f: f.write(r.content)
         img = Image.open('img.jpg').convert("RGB")
@@ -75,9 +85,9 @@ def add_watermark(url):
         print(f"Watermark Error: {e}")
         return False
 
-# --- Step 3: Upload to ImgBB (FIXED) ---
+# --- Step 3: Upload to ImgBB (GREEN BUTTON FIX) ---
 def upload_to_imgbb(p):
-    print("--- Step 3: Uploading to ImgBB (Fixed) ---")
+    print("--- Step 3: Uploading to ImgBB ---")
     browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     page = context.new_page()
@@ -85,59 +95,58 @@ def upload_to_imgbb(p):
     try:
         page.goto("https://imgbb.com/", timeout=60000)
         
-        # Cookie banner check (kabhi kabhi aa jata hai)
+        # Cookie banner handling
         try:
-            page.click('.cmp-intro_accept-all', timeout=2000)
-            print("Cookie banner closed.")
+            page.click('.cmp-intro_accept-all', timeout=3000)
         except:
             pass
 
-        # 1. File Set Karo
+        # 1. File Input mein file daalo
         print("Selecting file...")
         page.set_input_files('input[type="file"]', 'final.jpg')
         
-        # 2. FORCE TRIGGER (Ye line sabse zaroori hai!)
-        # Website ko batayenge ki file change hui hai
+        # 2. FORCE EVENT (Website ko jagana)
         page.evaluate("""
             var input = document.querySelector('input[type="file"]');
             input.dispatchEvent(new Event('change', { bubbles: true }));
         """)
         
-        # 3. Wait for Upload Button in Modal
-        print("Waiting for Upload button...")
-        # Selector ko thoda loose rakha hai taaki pakad le
-        page.wait_for_selector('button.btn-primary', state="visible", timeout=15000)
+        # 3. Wait for UPLOAD button (TEXT BASED MATCHING)
+        # Ab hum color class nahi, seedha text "UPLOAD" dhoond rahe hain
+        print("Waiting for 'UPLOAD' button...")
+        
+        # Is line se wo Green button pakad lega jo screenshot me hai
+        upload_btn = page.locator('button:has-text("UPLOAD")').first
+        upload_btn.wait_for(state="visible", timeout=20000)
         
         # 4. Click Upload
-        print("Clicking Upload...")
-        page.click('button.btn-primary') # Ye wo hara wala button hai modal ke andar
+        print("Clicking Green Upload Button...")
+        upload_btn.click()
         
-        # 5. Wait for Link
+        # 5. Link Generation ka wait
         print("Waiting for link...")
         page.wait_for_selector('input#embed-code-1', state="visible", timeout=45000)
         
-        # 6. Get BBCode
-        # Dropdown change karte hain
+        # 6. BBCode select karo
         try:
             page.click('.input-group-btn') 
             page.click('li[data-text="BBCode full linked"]')
             time.sleep(1)
         except:
-            print("Could not switch to full linked, using default.")
+            print("Default link used.")
 
         bbcode = page.input_value('input#embed-code-1')
-        print(f"ImgBB Success! Code found.")
+        print(f"ImgBB Success! BBCode: {bbcode[:20]}...")
         browser.close()
         return bbcode
         
     except Exception as e:
         print(f"ImgBB Upload Failed: {e}")
-        # Debugging ke liye html dump
-        # with open("debug.html", "w") as f: f.write(page.content())
+        page.screenshot(path="imgbb_failed.png")
         browser.close()
         return None
 
-# --- Step 4: Posting Link to Forum ---
+# --- Step 4: Posting to Forum ---
 def post_to_forum(p, bbcode_content):
     print("--- Step 4: Posting to Forum ---")
     
@@ -187,6 +196,7 @@ def post_to_forum(p, bbcode_content):
 
 if __name__ == "__main__":
     with sync_playwright() as playwright:
+        cleanup_files()
         img_url = get_new_image()
         if img_url:
             if add_watermark(img_url):
