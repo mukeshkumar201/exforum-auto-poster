@@ -54,28 +54,22 @@ def add_watermark(url):
         w, h = img.size
         fs = int(h * 0.08) # 8% Font Size
         
-        # Font Selection Logic
         try:
-            # Linux server path
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
         except:
             try:
-                # Windows fallback
                 font = ImageFont.truetype("arial.ttf", fs)
             except:
-                # Default fallback
                 font = ImageFont.load_default()
 
         bbox = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         pos = (w - tw - 50, h - th - 50)
 
-        # Black Outline
         for adj in range(-2, 3):
             for b in range(-2, 3):
                 draw.text((pos[0]+adj, pos[1]+b), WATERMARK_TEXT, fill="black", font=font)
         
-        # White Text
         draw.text(pos, WATERMARK_TEXT, fill="white", font=font)
         img.save('final.jpg', quality=95)
         print(f"Watermark applied: {fs}px size.")
@@ -84,24 +78,25 @@ def add_watermark(url):
         print(f"Watermark Error: {e}")
         return False
 
-# --- Step 3: Posting to Forum (FIXED) ---
+# --- Step 3: Posting to Forum (ULTIMATE FIX) ---
 def post_to_forum(p):
-    print("--- Step 3: Posting to Forum with Enhanced Upload Logic ---")
+    print("--- Step 3: Posting to Forum with Drag & Drop Logic ---")
     
-    # Debugging ke liye headless=False kar sakte ho agar dekhna hai browser me kya ho raha hai
-    browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    # Permissions grant kar rahe hain taaki clipboard/files access easy ho
+    browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-web-security"])
+    context = browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        permissions=['clipboard-read', 'clipboard-write']
+    )
     
-    # Cookies Check
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw:
-        print("CRITICAL ERROR: 'EX_COOKIES' environment variable not found!")
-        print("Please set export EX_COOKIES='[...]' in your terminal.")
+        print("CRITICAL: EX_COOKIES missing!")
         return
         
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
-    page.set_default_timeout(60000) # 60 seconds timeout
+    page.set_default_timeout(60000)
     
     try:
         print(f"Navigating to: {THREAD_REPLY_URL}")
@@ -112,111 +107,98 @@ def post_to_forum(p):
         editor.wait_for(state="visible")
         print("Editor loaded.")
 
-        # --- FIX: ROBUST UPLOAD HANDLING ---
-        print("Attempting to upload image...")
-        upload_successful_trigger = False
-
-        # Method 1: File Chooser (Standard Click)
+        # --- STRATEGY 1: DIRECT DRAG AND DROP (Best for XenForo) ---
+        print("Attempting Method 1: Direct Drag & Drop to Editor...")
         try:
-            with page.expect_file_chooser(timeout=5000) as fc_info:
-                # Chevereto plugin button click
-                page.click('button[data-chevereto-pup-trigger]', force=True)
-            
-            file_chooser = fc_info.value
-            file_chooser.set_files("final.jpg")
-            print("Method 1: File Chooser detected and file set.")
-            upload_successful_trigger = True
-            
+            # Playwright ka set_input_files agar 'div' par use karein toh wo Drop event simulate karta hai
+            page.locator('.fr-element').set_input_files("final.jpg")
+            print("Drag & Drop command sent.")
+            time.sleep(3) # Wait for upload to start
         except Exception as e:
-            print(f"Method 1 failed ({e}), trying Method 2 (Direct Injection)...")
-            
-            # Method 2: Force Injection into hidden input
-            try:
-                # Input ko visible banao aur file set karo
-                page.evaluate("""
-                    const input = document.querySelector('input[type="file"]');
-                    if(input) {
-                        input.style.display = 'block'; 
-                        input.style.visibility = 'visible';
-                    }
-                """)
-                page.set_input_files('input[type="file"]', 'final.jpg')
-                
-                # Manual Event Dispatch (Bahut zaroori hai!)
-                page.evaluate("""
-                    const input = document.querySelector('input[type="file"]');
-                    if(input) {
-                        input.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                """)
-                print("Method 2: Force injection completed.")
-                upload_successful_trigger = True
-            except Exception as e2:
-                print(f"Method 2 failed: {e2}")
+            print(f"Drag & Drop failed: {e}")
 
-        if not upload_successful_trigger:
-            print("CRITICAL: Could not trigger upload mechanism.")
+        # Check agar Method 1 se upload ho gaya
+        if check_upload_success(editor):
+            submit_post(page)
             return
 
-        # --- WAIT FOR UPLOAD TO COMPLETE (BBCode Check) ---
-        print("Waiting for image URL/BBCode to appear in editor...")
-        uploaded = False
-        
-        # 10 checks * 3 seconds = 30 seconds wait for upload
-        for i in range(10): 
-            content = editor.inner_html()
-            # Check for [IMG] tag or <img> html tag
-            if "[IMG]" in content or "<img" in content.lower():
-                print("SUCCESS: Image detected in editor!")
-                uploaded = True
-                break
-            print(f"Uploading... {i+1}/10")
-            time.sleep(3)
-
-        if not uploaded:
-            print("ERROR: Upload timeout. Image did not appear in editor.")
-            page.screenshot(path="upload_failed_debug.png")
-            return 
-
-        # --- ADD TEXT AND SUBMIT ---
-        print("Adding text...")
-        editor.click()
-        page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\nFresh Desi Bhabhi Update! 🔥\nCheck more at: {WATERMARK_TEXT}")
-        time.sleep(2)
-
-        print("Submitting post...")
-        # Submit button ke multiple selectors try karenge
-        submit_btn = page.locator('button:has-text("Post reply")').first
-        if not submit_btn.is_visible():
-             submit_btn = page.locator('.button--icon--reply').first
-             
-        if submit_btn.is_visible():
-            submit_btn.click()
-            print("Post button clicked.")
+        # --- STRATEGY 2: HIDDEN INPUT MANIPULATION (Fallback) ---
+        print("Method 1 failed/slow. Attempting Method 2: Hidden Input Injection...")
+        try:
+            # Input ko visible banao
+            page.evaluate("""
+                const input = document.querySelector('input[type="file"]');
+                if(input) {
+                    input.style.display = 'block'; 
+                    input.style.visibility = 'visible';
+                    input.style.position = 'fixed';
+                    input.style.zIndex = '9999';
+                    input.style.top = '0';
+                    input.style.left = '0';
+                }
+            """)
+            # File set karo
+            page.set_input_files('input[type="file"]', 'final.jpg')
             
-            # Wait for submission to process
-            page.wait_for_timeout(5000)
-            page.screenshot(path="success_post.png")
-            print("--- BOT TASK FINISHED SUCCESSFULLY ---")
+            # MULTIPLE Event Triggers (Bahut zaroori hai)
+            page.evaluate("""
+                const input = document.querySelector('input[type="file"]');
+                if(input) {
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            """)
+            print("Force injection & events dispatched.")
+        except Exception as e:
+            print(f"Injection failed: {e}")
+
+        # Final Wait for upload
+        if check_upload_success(editor):
+            submit_post(page)
         else:
-            print("Error: Submit button not found!")
-            page.screenshot(path="submit_btn_missing.png")
-        
+            print("ERROR: All upload methods failed. Saving debug screenshot.")
+            page.screenshot(path="upload_failed_final.png")
+
     except Exception as e:
         print(f"Forum Error: {e}")
         page.screenshot(path="error_crash.png")
     finally:
         browser.close()
 
-# --- Main Execution ---
+def check_upload_success(editor_locator):
+    print("Waiting for BBCode ([IMG] tag)...")
+    for i in range(15): # 45 seconds total wait
+        content = editor_locator.inner_html()
+        if "[IMG]" in content or "<img" in content.lower():
+            print(f"SUCCESS: Image detected in editor after {i*3}s!")
+            return True
+        time.sleep(3)
+    return False
+
+def submit_post(page):
+    print("Adding text and submitting...")
+    # Text append karna
+    page.locator('.fr-element').click()
+    page.keyboard.press("Control+End")
+    page.keyboard.type(f"\n\n🔥 Desi Bhabhi Viral Update! 🔥\nSource: {WATERMARK_TEXT}")
+    time.sleep(2)
+
+    # Submit Button Logic
+    submit_btn = page.locator('button:has-text("Post reply")').first
+    if not submit_btn.is_visible():
+            submit_btn = page.locator('.button--icon--reply').first
+    
+    if submit_btn.is_visible():
+        submit_btn.click()
+        page.wait_for_timeout(5000)
+        page.screenshot(path="success_post.png")
+        print("--- BOT TASK FINISHED SUCCESSFULLY ---")
+    else:
+        print("Submit button not found!")
+
 if __name__ == "__main__":
     with sync_playwright() as playwright:
         img_url = get_new_image()
         if img_url:
             if add_watermark(img_url):
                 post_to_forum(playwright)
-            else:
-                print("Watermarking failed.")
-        else:
-            print("No new images found.")
