@@ -70,7 +70,7 @@ def add_watermark(url):
         return False
 
 def post_to_forum(p):
-    print("--- Step 3: Posting to Forum (Chevereto Plugin Logic) ---")
+    print("--- Step 3: Posting to Forum (Direct ImgBB Upload) ---")
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
@@ -84,47 +84,60 @@ def post_to_forum(p):
     page.set_default_timeout(90000)
     
     try:
-        page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
+        print(f"Navigating to {THREAD_REPLY_URL}...")
+        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         
-        # 1. Check Editor
+        # Editor load hone ka wait
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
         print("Editor is ready.")
 
-        # 2. Trigger Upload (Using your HTML selector)
-        print("Clicking 'Upload images' button...")
-        # Hum button click karke file chooser ka wait karenge
-        with page.expect_file_chooser() as fc_info:
-            # Selector derived from your provided HTML
-            page.click('button.js-attachmentUpload[data-chevereto-pup-trigger]', force=True)
+        # 1. Direct File Injection (Hidden Input Target)
+        # XenForo/ImgBB plugin hidden input ko target karna
+        print("Injecting file into forum's hidden upload input...")
+        # Hum hidden input dhund kar seedha file set karenge bina button click kiye
+        file_input = page.locator('input[type="file"]')
+        file_input.set_input_files('final.jpg')
         
-        file_chooser = fc_info.value
-        file_chooser.set_files("final.jpg")
-        print("Image injected into Chevereto popup.")
+        # 2. Triggering the upload JS (Important for Chevereto/ImgBB)
+        print("Triggering upload event...")
+        page.evaluate('() => { const input = document.querySelector("input[type=\'file\']"); if(input) input.dispatchEvent(new Event("change", { bubbles: true })); }')
 
-        # 3. Wait for BBCode Insertion
-        # Jab upload khatam hota hai, plugin editor mein BBCode dal deta hai
-        print("Waiting for BBCode [IMG] to appear in editor...")
+        # 3. Wait for BBCode/Image Tag in Editor
+        # ImgBB upload hone ke baad editor mein automatic [IMG] code dalta hai
+        print("Waiting for image to appear in editor...")
         success_upload = False
-        for i in range(20): # Max 100 seconds
+        for i in range(20): # 100 seconds max
             time.sleep(5)
             content = editor.inner_html()
-            if "[IMG]" in content or "img" in content.lower() or "data-p-id" in content:
+            # Yahan hum check karte hain ki image tag ya BBCode aaya ki nahi
+            if "[IMG]" in content or "img" in content.lower() or "data-p-id" in content or "blob:" in content:
                 print(f"SUCCESS: Image detected in editor (Attempt {i+1})!")
                 success_upload = True
                 break
-            print(f"Checking Editor (Attempt {i+1})...")
+            print(f"Checking Editor for Image (Attempt {i+1})...")
 
         if not success_upload:
-            print("FAILED: Image didn't show up in editor. Checking screenshot...")
+            # Agar direct insert nahi hua toh ho sakta hai "Insert All" button dabana ho
+            print("Image not auto-inserted. Checking for 'Insert' buttons...")
+            insert_btn = page.locator('button:has-text("Insert"), .js-attachmentAction').first
+            if insert_btn.is_visible():
+                insert_btn.click()
+                time.sleep(2)
+                full_img = page.locator('button:has-text("Full image")').first
+                if full_img.is_visible(): full_img.click()
+                success_upload = True
+
+        if not success_upload:
+            print("FAILED: Image didn't upload or insert.")
             page.screenshot(path="failed_upload.png")
             return
 
-        # 4. Finalizing the Post
-        print("Adding caption...")
+        # 4. Final Text Message
+        print("Adding message text...")
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\nFresh Update! 🔥\nCheck more: {WATERMARK_TEXT}")
+        page.keyboard.type(f"\n\nNew Fresh Desi Update! 🔥\nEnjoy: {WATERMARK_TEXT}")
         time.sleep(2)
 
         # 5. Submit
