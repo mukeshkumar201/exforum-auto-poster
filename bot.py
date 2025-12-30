@@ -3,7 +3,6 @@ import requests
 import time
 import random
 import json
-import base64
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import sync_playwright
@@ -14,7 +13,7 @@ WATERMARK_TEXT = "freepornx.site"
 PORN_SOURCE = "https://www.pornpics.com/tags/desi/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
-# --- Step 1: Image Scraping ---
+# --- Step 1: Scraping ---
 def get_new_image():
     print(f"--- Step 1: Scraping Image from {PORN_SOURCE} ---")
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -46,22 +45,19 @@ def get_new_image():
 
 # --- Step 2: Watermarking ---
 def add_watermark(url):
-    print("--- Step 2: Watermarking Image (Size: 8%) ---")
+    print("--- Step 2: Watermarking ---")
     try:
         r = requests.get(url, timeout=30)
         with open('img.jpg', 'wb') as f: f.write(r.content)
         img = Image.open('img.jpg').convert("RGB")
         draw = ImageDraw.Draw(img)
         w, h = img.size
-        fs = int(h * 0.08) # 8% Font Size
+        fs = int(h * 0.08)
         
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
         except:
-            try:
-                font = ImageFont.truetype("arial.ttf", fs)
-            except:
-                font = ImageFont.load_default()
+            font = ImageFont.load_default()
 
         bbox = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -73,15 +69,65 @@ def add_watermark(url):
         
         draw.text(pos, WATERMARK_TEXT, fill="white", font=font)
         img.save('final.jpg', quality=95)
-        print(f"Watermark applied: {fs}px size.")
+        print("Watermarking Done.")
         return True
     except Exception as e:
         print(f"Watermark Error: {e}")
         return False
 
-# --- Step 3: Posting to Forum (JS INJECTION METHOD) ---
-def post_to_forum(p):
-    print("--- Step 3: Posting via JS Injection (No Buttons Needed) ---")
+# --- Step 3: Upload to ImgBB (Automated) ---
+def upload_to_imgbb(p):
+    print("--- Step 3: Uploading to ImgBB (Automated) ---")
+    browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    page = context.new_page()
+    
+    try:
+        page.goto("https://imgbb.com/", timeout=60000)
+        
+        # 1. File Upload Trigger
+        # ImgBB ke homepage par hidden input hota hai
+        print("Selecting file on ImgBB...")
+        page.set_input_files('input[type="file"]', 'final.jpg')
+        
+        # 2. Wait for Edit/Upload Modal
+        print("Waiting for upload modal...")
+        page.wait_for_selector('.btn-primary', state="visible") # 'Upload' button
+        time.sleep(1)
+        
+        # 3. Click Upload
+        print("Clicking Upload button...")
+        # Kabhi kabhi multiple buttons hote hain, wo wala chahiye jo modal me ho
+        page.click('button.btn-primary:has-text("Upload")')
+        
+        # 4. Wait for Result
+        print("Waiting for generated link...")
+        page.wait_for_selector('input#embed-code-1', state="visible", timeout=30000)
+        
+        # 5. Change Dropdown to 'BBCode full linked' (Optional, but safer)
+        # Default usually works, but let's just grab the Viewer Link or Direct Link code
+        # ImgBB by default gives "Viewer link" in the box. Let's switch to BBCode full.
+        
+        # Dropdown open karo
+        page.click('.input-group-btn') 
+        # Select "BBCode full linked" (data-value="bbcode-embed-medium" ya similar hota hai, text se pakdenge)
+        page.click('li[data-text="BBCode full linked"]')
+        
+        # Code Copy karo
+        bbcode = page.input_value('input#embed-code-1')
+        print(f"ImgBB Success! BBCode obtained.")
+        browser.close()
+        return bbcode
+        
+    except Exception as e:
+        print(f"ImgBB Upload Failed: {e}")
+        page.screenshot(path="imgbb_error.png")
+        browser.close()
+        return None
+
+# --- Step 4: Posting Link to Forum ---
+def post_to_forum(p, bbcode_content):
+    print("--- Step 4: Posting to Forum ---")
     
     browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
@@ -93,97 +139,43 @@ def post_to_forum(p):
         
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
-    page.set_default_timeout(60000)
     
     try:
-        print(f"Navigating to: {THREAD_REPLY_URL}")
-        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
+        page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
         
-        # Editor load hone ka wait
-        editor_selector = '.fr-element'
-        page.wait_for_selector(editor_selector, state="visible")
-        print("Editor loaded.")
-
-        # --- MAGIC: Convert Image to Base64 & Inject ---
-        print("Preparing image for injection...")
-        with open("final.jpg", "rb") as image_file:
-            b64_string = base64.b64encode(image_file.read()).decode('utf-8')
+        # Editor wait
+        editor = page.locator('.fr-element')
+        editor.wait_for(state="visible")
         
-        print("Injecting image via JavaScript Drag-Event...")
-        
-        # Ye JavaScript browser ke andar run karegi. 
-        # Ye 'fake' file banayegi aur editor par 'drop' kar degi.
-        page.evaluate(f"""
-            async () => {{
-                const b64 = "{b64_string}";
-                const mime = "image/jpeg";
-                const filename = "final.jpg";
-
-                // Base64 se Blob banana
-                const res = await fetch(`data:${{mime}};base64,${{b64}}`);
-                const blob = await res.blob();
-                const file = new File([blob], filename, {{ type: mime }});
-
-                // DataTransfer object banana (Drag event ke liye)
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                const list = dt.files;
-
-                // Editor dhoondna
-                const editor = document.querySelector('{editor_selector}');
-                
-                // Drop Event Fire karna
-                const event = new DragEvent('drop', {{
-                    bubbles: true,
-                    cancelable: true,
-                    dataTransfer: dt
-                }});
-                editor.dispatchEvent(event);
-            }}
-        """)
-        
-        print("JS Injection executed. Waiting for upload to process...")
-        time.sleep(5) # Thoda wait taaki upload start ho jaye
-
-        # --- VERIFICATION ---
-        uploaded = False
-        for i in range(15): # 45 seconds total wait
-            content = page.locator(editor_selector).inner_html()
-            # [IMG] tag ya <img src="..."> dhoondo
-            if "[IMG]" in content or "<img" in content.lower():
-                print(f"SUCCESS: Image code detected in editor!")
-                uploaded = True
-                break
-            print(f"Processing upload... {i+1}/15")
-            time.sleep(3)
-
-        if not uploaded:
-            print("ERROR: Upload failed. Check 'upload_failed.png'.")
-            page.screenshot(path="upload_failed.png")
-            return
-
-        # --- SUBMIT ---
-        print("Adding text and submitting...")
-        page.locator(editor_selector).click()
+        # Click and Type
+        editor.click()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\n🔥 Desi Bhabhi Latest Leak! 🔥\nMore at: {WATERMARK_TEXT}")
+        
+        # Message banana
+        message = f"\n\n🔥 Desi Bhabhi Viral! 🔥\n{bbcode_content}\n\nCredit: {WATERMARK_TEXT}"
+        
+        print("Typing BBCode into forum editor...")
+        page.keyboard.type(message)
         time.sleep(2)
 
+        # Submit
+        print("Submitting post...")
         submit_btn = page.locator('button:has-text("Post reply")').first
         if not submit_btn.is_visible():
-            submit_btn = page.locator('.button--icon--reply').first
-            
+             submit_btn = page.locator('.button--icon--reply').first
+        
         if submit_btn.is_visible():
             submit_btn.click()
-            page.wait_for_timeout(5000)
+            page.wait_for_timeout(6000) # Wait for processing
             page.screenshot(path="success_post.png")
-            print("--- BOT TASK FINISHED SUCCESSFULLY ---")
+            print("--- POST SUCCESSFUL ---")
         else:
-            print("Submit button missing!")
+            print("Submit button not found.")
+            page.screenshot(path="error_submit.png")
 
     except Exception as e:
-        print(f"Script Error: {e}")
-        page.screenshot(path="error_crash.png")
+        print(f"Forum Error: {e}")
+        page.screenshot(path="error_forum.png")
     finally:
         browser.close()
 
@@ -192,4 +184,11 @@ if __name__ == "__main__":
         img_url = get_new_image()
         if img_url:
             if add_watermark(img_url):
-                post_to_forum(playwright)
+                # Step 3: ImgBB par upload karo
+                bbcode = upload_to_imgbb(playwright)
+                
+                if bbcode:
+                    # Step 4: Forum par paste karo
+                    post_to_forum(playwright, bbcode)
+                else:
+                    print("Skipping post because ImgBB upload failed.")
