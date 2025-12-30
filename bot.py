@@ -58,11 +58,11 @@ def post_to_forum(p, direct_img_url):
         editor.wait_for(state="visible")
         print("Editor ready.")
 
-        # --- UPDATE: Image ke upar text add karna ---
-        print("Adding text ABOVE the image...")
+        # --- UPDATE: Image ke upar BADA text add karna ---
+        print("Adding Large text ABOVE the image...")
         editor.focus()
-        page.keyboard.type("visit website - freepornx.site")
-        page.keyboard.press("Enter")
+        # [SIZE=6] text ko bada karega aur [B] bold karega
+        page.keyboard.type("[SIZE=6][B]visit website - freepornx.site[/B][/SIZE]\n")
         time.sleep(1)
 
         # 1. Click Main Image Button
@@ -114,14 +114,13 @@ def post_to_forum(p, direct_img_url):
         
         time.sleep(5) # Image rendering wait
 
-        # --- UPDATE: Image ke niche text add karna ---
-        print("Adding text BELOW the image...")
+        # --- UPDATE: Image ke niche BADA text add karna ---
+        print("Adding Large text BELOW the image...")
         editor.focus()
         page.keyboard.press("Control+End")
-        # Direct text injection niche ke liye
-        page.keyboard.type("\nvisit website - freepornx.site")
-        
-        # 5. Finalize Post message
+        page.keyboard.type("\n[SIZE=6][B]visit website - freepornx.site[/B][/SIZE]")
+
+        # 5. Finalize Post
         print("Adding final caption...")
         page.keyboard.type("\n\nNew Fresh Desi Update! 🔥")
         time.sleep(2)
@@ -130,6 +129,7 @@ def post_to_forum(p, direct_img_url):
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
+        # Success navigation wait
         page.wait_for_timeout(10000)
         page.screenshot(path="final_check.png")
         print("--- BOT TASK FINISHED SUCCESSFULLY ---")
