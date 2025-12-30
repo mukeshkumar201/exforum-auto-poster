@@ -46,8 +46,10 @@ def add_watermark(url):
         img = Image.open('img.jpg').convert("RGB")
         draw = ImageDraw.Draw(img)
         w, h = img.size
-        fs = int(h * 0.08) 
+        fs = int(h * 0.08) # 8% Font Size
+        
         try:
+            # Linux environment standard font
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
         except:
             font = ImageFont.load_default()
@@ -68,30 +70,8 @@ def add_watermark(url):
         print(f"Watermark Error: {e}")
         return False
 
-def upload_image():
-    """Catbox with Uguu.se Fallback"""
-    print("--- Step 3: Hosting Image ---")
-    # Method 1: Catbox
-    try:
-        r = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": open("final.jpg", "rb")}, timeout=60)
-        if r.status_code == 200 and "http" in r.text:
-            print(f"Hosted on Catbox: {r.text.strip()}")
-            return r.text.strip()
-    except: pass
-
-    # Method 2: Uguu.se (Fallback)
-    try:
-        print("Catbox failed, trying Uguu.se...")
-        r = requests.post("https://uguu.se/api.php?d=upload-tool", files={"file": open("final.jpg", "rb")}, timeout=60)
-        if r.status_code == 200 and "http" in r.text:
-            print(f"Hosted on Uguu: {r.text.strip()}")
-            return r.text.strip()
-    except: pass
-    
-    return None
-
-def post_to_forum(p, image_link):
-    print("--- Step 4: Posting to Forum ---")
+def post_to_forum(p):
+    print("--- Step 3: Posting to Forum via ImgBB Plugin ---")
     browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
@@ -105,28 +85,55 @@ def post_to_forum(p, image_link):
     page.set_default_timeout(90000)
     
     try:
-        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
+        page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
         
         if page.locator('text=Log in').is_visible():
             print("Session Expired! Update EX_COOKIES.")
             return
 
+        # 1. Editor ka wait karo
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
-        
-        content = f"[IMG]{image_link}[/IMG]\n\nFresh Desi Update! 🔥\nCheck: {WATERMARK_TEXT}"
-        
-        editor.click()
-        page.keyboard.type(content, delay=50)
-        time.sleep(5)
 
+        # 2. ImgBB Plugin Button Trigger karo
+        print("Clicking ImgBB Upload Button...")
+        upload_btn = page.locator('button[data-chevereto-pup-trigger]')
+        
+        with page.expect_file_chooser() as fc_info:
+            upload_btn.click()
+        
+        file_chooser = fc_info.value
+        file_chooser.set_files("final.jpg")
+        print("File selected. Waiting for upload to finish...")
+
+        # 3. Wait for BBCode: Plugin upload ke baad [IMG] code editor mein daalta hai
+        # Hum check karenge ki editor mein content aaya ya nahi
+        success_upload = False
+        for _ in range(12): # 1 minute wait (12 * 5s)
+            time.sleep(5)
+            content = editor.inner_html()
+            if "img" in content.lower() or "ibb" in content.lower():
+                print("SUCCESS: Image BBCode detected in editor.")
+                success_upload = True
+                break
+        
+        if not success_upload:
+            print("WARNING: Upload might have failed or took too long.")
+
+        # 4. Text Add karo (Image ke niche)
+        editor.click()
+        page.keyboard.press("Control+End")
+        page.keyboard.type(f"\n\nFresh Desi Bhabhi Update! 🔥\nCheck: {WATERMARK_TEXT}")
+        time.sleep(2)
+
+        # 5. Submit Post
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
-        # Success check: Wait for a few seconds to ensure post is saved
         time.sleep(10)
         page.screenshot(path="final_check.png")
         print("--- TASK COMPLETED SUCCESSFULLY ---")
+        
     except Exception as e:
         print(f"Forum Error: {e}")
         page.screenshot(path="error_debug.png")
@@ -138,8 +145,5 @@ if __name__ == "__main__":
         img_url = get_new_image()
         if img_url:
             if add_watermark(img_url):
-                hosted_link = upload_image()
-                if hosted_link:
-                    post_to_forum(playwright, hosted_link)
-                else:
-                    print("Hosting failed on all platforms.")
+                # Is baar hum seedha post_to_forum call kar rahe hain bina external link ke
+                post_to_forum(playwright)
