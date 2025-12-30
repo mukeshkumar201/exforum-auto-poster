@@ -75,9 +75,9 @@ def add_watermark(url):
         print(f"Watermark Error: {e}")
         return False
 
-# --- Step 3: Upload to ImgBB (Automated) ---
+# --- Step 3: Upload to ImgBB (FIXED) ---
 def upload_to_imgbb(p):
-    print("--- Step 3: Uploading to ImgBB (Automated) ---")
+    print("--- Step 3: Uploading to ImgBB (Fixed) ---")
     browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     page = context.new_page()
@@ -85,43 +85,55 @@ def upload_to_imgbb(p):
     try:
         page.goto("https://imgbb.com/", timeout=60000)
         
-        # 1. File Upload Trigger
-        # ImgBB ke homepage par hidden input hota hai
-        print("Selecting file on ImgBB...")
+        # Cookie banner check (kabhi kabhi aa jata hai)
+        try:
+            page.click('.cmp-intro_accept-all', timeout=2000)
+            print("Cookie banner closed.")
+        except:
+            pass
+
+        # 1. File Set Karo
+        print("Selecting file...")
         page.set_input_files('input[type="file"]', 'final.jpg')
         
-        # 2. Wait for Edit/Upload Modal
-        print("Waiting for upload modal...")
-        page.wait_for_selector('.btn-primary', state="visible") # 'Upload' button
-        time.sleep(1)
+        # 2. FORCE TRIGGER (Ye line sabse zaroori hai!)
+        # Website ko batayenge ki file change hui hai
+        page.evaluate("""
+            var input = document.querySelector('input[type="file"]');
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        """)
         
-        # 3. Click Upload
-        print("Clicking Upload button...")
-        # Kabhi kabhi multiple buttons hote hain, wo wala chahiye jo modal me ho
-        page.click('button.btn-primary:has-text("Upload")')
+        # 3. Wait for Upload Button in Modal
+        print("Waiting for Upload button...")
+        # Selector ko thoda loose rakha hai taaki pakad le
+        page.wait_for_selector('button.btn-primary', state="visible", timeout=15000)
         
-        # 4. Wait for Result
-        print("Waiting for generated link...")
-        page.wait_for_selector('input#embed-code-1', state="visible", timeout=30000)
+        # 4. Click Upload
+        print("Clicking Upload...")
+        page.click('button.btn-primary') # Ye wo hara wala button hai modal ke andar
         
-        # 5. Change Dropdown to 'BBCode full linked' (Optional, but safer)
-        # Default usually works, but let's just grab the Viewer Link or Direct Link code
-        # ImgBB by default gives "Viewer link" in the box. Let's switch to BBCode full.
+        # 5. Wait for Link
+        print("Waiting for link...")
+        page.wait_for_selector('input#embed-code-1', state="visible", timeout=45000)
         
-        # Dropdown open karo
-        page.click('.input-group-btn') 
-        # Select "BBCode full linked" (data-value="bbcode-embed-medium" ya similar hota hai, text se pakdenge)
-        page.click('li[data-text="BBCode full linked"]')
-        
-        # Code Copy karo
+        # 6. Get BBCode
+        # Dropdown change karte hain
+        try:
+            page.click('.input-group-btn') 
+            page.click('li[data-text="BBCode full linked"]')
+            time.sleep(1)
+        except:
+            print("Could not switch to full linked, using default.")
+
         bbcode = page.input_value('input#embed-code-1')
-        print(f"ImgBB Success! BBCode obtained.")
+        print(f"ImgBB Success! Code found.")
         browser.close()
         return bbcode
         
     except Exception as e:
         print(f"ImgBB Upload Failed: {e}")
-        page.screenshot(path="imgbb_error.png")
+        # Debugging ke liye html dump
+        # with open("debug.html", "w") as f: f.write(page.content())
         browser.close()
         return None
 
@@ -143,39 +155,33 @@ def post_to_forum(p, bbcode_content):
     try:
         page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
         
-        # Editor wait
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
         
-        # Click and Type
         editor.click()
         page.keyboard.press("Control+End")
         
-        # Message banana
-        message = f"\n\n🔥 Desi Bhabhi Viral! 🔥\n{bbcode_content}\n\nCredit: {WATERMARK_TEXT}"
+        message = f"\n\n🔥 Desi Bhabhi Viral Update! 🔥\n{bbcode_content}\n\nCredit: {WATERMARK_TEXT}"
         
-        print("Typing BBCode into forum editor...")
+        print("Typing content...")
         page.keyboard.type(message)
         time.sleep(2)
 
-        # Submit
-        print("Submitting post...")
+        print("Submitting...")
         submit_btn = page.locator('button:has-text("Post reply")').first
         if not submit_btn.is_visible():
              submit_btn = page.locator('.button--icon--reply').first
         
         if submit_btn.is_visible():
             submit_btn.click()
-            page.wait_for_timeout(6000) # Wait for processing
+            page.wait_for_timeout(6000)
             page.screenshot(path="success_post.png")
             print("--- POST SUCCESSFUL ---")
         else:
             print("Submit button not found.")
-            page.screenshot(path="error_submit.png")
 
     except Exception as e:
         print(f"Forum Error: {e}")
-        page.screenshot(path="error_forum.png")
     finally:
         browser.close()
 
@@ -184,11 +190,8 @@ if __name__ == "__main__":
         img_url = get_new_image()
         if img_url:
             if add_watermark(img_url):
-                # Step 3: ImgBB par upload karo
                 bbcode = upload_to_imgbb(playwright)
-                
                 if bbcode:
-                    # Step 4: Forum par paste karo
                     post_to_forum(playwright, bbcode)
                 else:
-                    print("Skipping post because ImgBB upload failed.")
+                    print("Skipping post due to upload failure.")
