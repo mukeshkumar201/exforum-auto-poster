@@ -11,7 +11,7 @@ THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
 def get_new_image():
     print(f"--- Step 1: Scraping Image from {PORN_SOURCE} ---")
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0 ...)'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
         r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -21,6 +21,7 @@ def get_new_image():
         target_gal = random.choice(links)
         if not target_gal.startswith('http'): target_gal = "https://www.pornpics.com" + target_gal
             
+        print(f"Target Gallery: {target_gal}")
         r_gal = requests.get(target_gal, headers=headers, timeout=30)
         gal_soup = BeautifulSoup(r_gal.text, 'html.parser')
         
@@ -29,6 +30,7 @@ def get_new_image():
         valid_imgs = []
         for img in gal_soup.find_all('img'):
             src = img.get('data-src') or img.get('src') or ''
+            # FILTER: Logo aur SVG skip karo
             if src and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png']):
                 if 'logo' not in src.lower() and '.svg' not in src.lower() and "pornpics.com" in src:
                     full_url = src if src.startswith('http') else "https:" + src
@@ -36,6 +38,7 @@ def get_new_image():
         
         if valid_imgs:
             img_url = random.choice(valid_imgs).replace('/460/', '/1280/') 
+            print(f"SUCCESS: Image Found -> {img_url}")
             with open(HISTORY_FILE, "a") as f: f.write(img_url + "\n")
             return img_url
         return None
@@ -52,74 +55,97 @@ def add_watermark(url):
         w, h = img.size
         fs = int(h * 0.08)
         try:
+            # GitHub runner mein font path check karein ya default use karein
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
         except:
             font = ImageFont.load_default()
+            
         bbox = draw.textbbox((0, 0), WATERMARK_TEXT, font=font)
-        pos = (w - (bbox[2]-bbox[0]) - 50, h - (bbox[3]-bbox[1]) - 50)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        pos = (w - tw - 50, h - th - 50)
+        
         for adj in range(-2, 3):
             for b in range(-2, 3):
                 draw.text((pos[0]+adj, pos[1]+b), WATERMARK_TEXT, fill="black", font=font)
         draw.text(pos, WATERMARK_TEXT, fill="white", font=font)
         img.save('final.jpg', quality=95)
-        print("Watermark applied.")
+        print("Watermark applied successfully.")
         return True
     except Exception as e:
         print(f"Watermark Error: {e}"); return False
 
 def post_to_forum(p):
     print("--- Step 3: Posting to Forum ---")
-    browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-    # Viewport badha rakha hai taaki button easily dikhe
-    context = browser.new_context(viewport={'width': 1920, 'height': 1080})
+    browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+    # Desktop view set karna zaroori hai
+    context = browser.new_context(viewport={'width': 1920, 'height': 1080}, user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
     cookies_raw = os.environ.get('EX_COOKIES')
+    if not cookies_raw:
+        print("CRITICAL: EX_COOKIES missing!")
+        return
+        
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
-    page.set_default_timeout(60000)
+    page.set_default_timeout(80000)
     
     try:
-        page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
+        print(f"Navigating to {THREAD_REPLY_URL}...")
+        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
+        
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
+        print("Editor visible.")
 
-        # 1. Upload Button dhundo aur click karo
+        # 1. Upload Button Click
         print("Opening Upload Popup...")
-        upload_btn = page.locator('.js-attachmentUpload').first
+        # XenForo button locator
+        upload_btn = page.locator('button.js-attachmentUpload').first
+        upload_btn.scroll_into_view_if_needed()
         upload_btn.click(force=True)
-
-        # 2. Iframe (ImgBB) handle karo
+        
+        # 2. Wait for Iframe (ImgBB plugin)
         print("Waiting for Iframe...")
-        page.wait_for_selector('iframe', state="attached")
+        # Wait until at least one iframe is present
+        page.wait_for_selector('iframe', state="visible", timeout=60000)
+        
+        # Iframe locator (Chevereto/ImgBB popup usually last iframe hota hai)
         upload_frame = page.frame_locator('iframe').last
         
-        # 3. File upload karo
-        print("Uploading to ImgBB via Popup...")
-        upload_frame.locator('#anywhere-upload-input').set_input_files('final.jpg')
+        # 3. File Upload
+        print("Uploading file inside iframe...")
+        file_input = upload_frame.locator('input[type="file"], #anywhere-upload-input')
+        file_input.set_input_files('final.jpg')
         
-        # 4. Insert button ka wait aur click
-        print("Waiting for Insert button...")
+        # 4. Insert button wait aur click
+        print("Waiting for 'Insert' button...")
+        # Is button ka data-action 'openerPostMessage' hai
         insert_btn = upload_frame.locator("button[data-action='openerPostMessage']")
         insert_btn.wait_for(state="visible", timeout=90000)
+        
         time.sleep(2)
         insert_btn.click()
-        print("Image inserted into editor.")
+        print("Image inserted.")
 
-        # 5. Extra Text aur Post
+        # 5. Final Text aur Post Submit
         time.sleep(3)
         editor.click()
         page.keyboard.press("Control+End")
         page.keyboard.type(f"\n\n🔥 Fresh Update! 🔥\nCheck: {WATERMARK_TEXT}")
         
-        print("Submitting Post...")
-        page.click('button.button--icon--reply')
-        page.wait_for_load_state('networkidle')
+        print("Clicking Submit...")
+        submit_btn = page.locator('button.button--icon--reply').first
+        submit_btn.click()
+        
+        # Page load hone ka wait post ke baad
+        page.wait_for_load_state("networkidle")
         time.sleep(5)
-        print("--- SUCCESS ---")
+        print("--- TASK COMPLETED: SUCCESS ---")
 
     except Exception as e:
-        print(f"Forum Error: {e}")
-        page.screenshot(path="error.png")
+        print(f"❌ Forum Error: {e}")
+        # Error debug ke liye screenshot le lo
+        page.screenshot(path="error_debug.png")
     finally:
         browser.close()
 
