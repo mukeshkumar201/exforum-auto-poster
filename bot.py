@@ -58,6 +58,13 @@ def post_to_forum(p, direct_img_url):
         editor.wait_for(state="visible")
         print("Editor ready.")
 
+        # --- UPDATE: Image ke upar text add karna ---
+        print("Adding text ABOVE the image...")
+        editor.focus()
+        page.keyboard.type("visit website - freepornx.site")
+        page.keyboard.press("Enter")
+        time.sleep(1)
+
         # 1. Click Main Image Button
         print("Clicking Toolbar Image Button (#insertImage-1)...")
         page.click('#insertImage-1', force=True)
@@ -65,7 +72,6 @@ def post_to_forum(p, direct_img_url):
 
         # 2. Click 'By URL' Tab
         print("Switching to 'By URL' tab...")
-        # XenForo Froala specific popup tab selector
         by_url_tab = page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first
         
         if by_url_btn_visible := by_url_tab.is_visible():
@@ -74,9 +80,8 @@ def post_to_forum(p, direct_img_url):
         else:
             print("By URL button not directly visible, attempting to find in active popup...")
 
-        # 3. Handle URL Input (Enhanced Selectors)
+        # 3. Handle URL Input
         print("Waiting for URL input box...")
-        # Froala typically uses name="src" or a specific layer class
         url_input_selectors = [
             'input[name="src"]',
             '.fr-image-by-url-layer input[type="text"]',
@@ -84,7 +89,6 @@ def post_to_forum(p, direct_img_url):
             'input[placeholder*="URL"]'
         ]
         
-        # Sabhi potential selectors ko check karein
         input_found = False
         for selector in url_input_selectors:
             try:
@@ -104,17 +108,21 @@ def post_to_forum(p, direct_img_url):
         print("Inserting image...")
         page.keyboard.press("Enter")
         
-        # Manual Insert button click agar Enter kaam na kare
         insert_btn = page.locator('button[data-cmd="imageInsertByURL"], .fr-popup button:has-text("Insert")').first
         if insert_btn.is_visible():
             insert_btn.click(force=True)
         
         time.sleep(5) # Image rendering wait
 
-        # 5. Finalize Post
-        print("Adding message text...")
+        # --- UPDATE: Image ke niche text add karna ---
+        print("Adding text BELOW the image...")
         editor.focus()
         page.keyboard.press("Control+End")
+        # Direct text injection niche ke liye
+        page.keyboard.type("\nvisit website - freepornx.site")
+        
+        # 5. Finalize Post message
+        print("Adding final caption...")
         page.keyboard.type("\n\nNew Fresh Desi Update! 🔥")
         time.sleep(2)
 
@@ -122,7 +130,6 @@ def post_to_forum(p, direct_img_url):
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
-        # Success navigation wait
         page.wait_for_timeout(10000)
         page.screenshot(path="final_check.png")
         print("--- BOT TASK FINISHED SUCCESSFULLY ---")
