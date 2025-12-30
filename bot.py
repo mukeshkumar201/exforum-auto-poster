@@ -13,41 +13,57 @@ def get_new_image():
     print(f"--- Step 1: Scraping Image from {PORN_SOURCE} ---")
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
-        # Gallery list nikaalna
         r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
         soup = BeautifulSoup(r.text, 'html.parser')
+        
+        # Sirf galleries ke links nikaalna
         links = [a['href'] for a in soup.find_all('a', href=True) if "/galleries/" in a['href']]
         
         if not links:
             print("ERROR: No galleries found.")
             return None
         
-        # Random gallery select karna
         target_gal = random.choice(links)
         if not target_gal.startswith('http'):
             target_gal = "https://www.pornpics.com" + target_gal
             
-        # Gallery page se images nikaalna
+        print(f"Targeting Gallery: {target_gal}")
         r_gal = requests.get(target_gal, headers=headers, timeout=30)
         gal_soup = BeautifulSoup(r_gal.text, 'html.parser')
         
         posted = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
         
-        # Sirf high-res ya main images uthana (Thumbnails nahi)
-        valid_imgs = [img.get('data-src') or img.get('src') for img in gal_soup.find_all('img') 
-                      if "pornpics.com" in (img.get('data-src') or img.get('src', ''))]
+        # Sabhi img tags nikaalo
+        all_imgs = gal_soup.find_all('img')
+        valid_imgs = []
+
+        for img in all_imgs:
+            src = img.get('data-src') or img.get('src') or ''
+            
+            # --- FILTER LOGIC START ---
+            # 1. Image URL hona chahiye
+            # 2. .svg nahi hona chahiye (Logo filter)
+            # 3. 'logo' ya 'icon' word nahi hona chahiye
+            # 4. pornpics ka domain hona chahiye
+            if src and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png']):
+                if 'logo' not in src.lower() and 'icon' not in src.lower() and '.svg' not in src.lower():
+                    if "pornpics.com" in src:
+                        if src not in posted:
+                            # Relative URL ko Absolute banana
+                            full_url = src if src.startswith('http') else "https:" + src
+                            valid_imgs.append(full_url)
+            # --- FILTER LOGIC END ---
         
-        new_imgs = [u if u.startswith('http') else "https:" + u for u in valid_imgs if u not in posted]
-        
-        if new_imgs:
-            img_url = random.choice(new_imgs)
-            # URL fix: Kabhi kabhi thumbnails ke URL aate hain, unhe large mein convert karna (Optional)
+        if valid_imgs:
+            img_url = random.choice(valid_imgs)
+            # Thumbnail ko Large image mein badalna (optional)
             img_url = img_url.replace('/460/', '/1280/') 
             
-            print(f"SUCCESS: Image Found -> {img_url}")
+            print(f"SUCCESS: Valid Image Found -> {img_url}")
             with open(HISTORY_FILE, "a") as f: f.write(img_url + "\n")
             return img_url
             
+        print("ERROR: No new valid images found after filtering.")
         return None
     except Exception as e:
         print(f"Scrape Error: {e}")
@@ -59,10 +75,15 @@ def add_watermark(url):
         r = requests.get(url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
         with open('temp.jpg', 'wb') as f: f.write(r.content)
         
+        # File check: Kahin khali toh nahi download hui?
+        if os.path.getsize('temp.jpg') < 1000:
+            print("Error: Downloaded file is too small or corrupted.")
+            return False
+
         img = Image.open('temp.jpg').convert("RGB")
         draw = ImageDraw.Draw(img)
         w, h = img.size
-        fs = int(h * 0.08) # 8% Font Size
+        fs = int(h * 0.08) 
         
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
@@ -73,14 +94,11 @@ def add_watermark(url):
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         pos = (w - tw - 50, h - th - 50)
 
-        # Shadow effect (Black outline)
         for adj in range(-2, 3):
             for b in range(-2, 3):
                 draw.text((pos[0]+adj, pos[1]+b), WATERMARK_TEXT, fill="black", font=font)
         
-        # Main text (White)
         draw.text(pos, WATERMARK_TEXT, fill="white", font=font)
-        
         img.save('final.jpg', quality=95)
         print("Watermark applied successfully.")
         return True
@@ -116,18 +134,15 @@ def post_to_forum(p, image_link):
     
     try:
         page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded", timeout=90000)
-        
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
         
-        # BBCode Format
         content = f"[IMG]{image_link}[/IMG]\n\nFresh Desi Bhabhi Update! 🔥\nCheck: {WATERMARK_TEXT}"
         
         editor.click()
         page.keyboard.type(content)
         time.sleep(2)
         
-        # Submit Button
         page.locator('button:has-text("Post reply"), .button--icon--reply').first.click()
         
         time.sleep(8)
