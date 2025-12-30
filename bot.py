@@ -39,14 +39,14 @@ def get_new_image():
         return None
 
 def add_watermark(url):
-    print("--- Step 2: Watermarking Image (Size: 8%) ---")
+    print("--- Step 2: Watermarking Image ---")
     try:
         r = requests.get(url, timeout=30)
         with open('img.jpg', 'wb') as f: f.write(r.content)
         img = Image.open('img.jpg').convert("RGB")
         draw = ImageDraw.Draw(img)
         w, h = img.size
-        fs = int(h * 0.08) # 8% Font Size
+        fs = int(h * 0.08) 
         
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
@@ -63,21 +63,21 @@ def add_watermark(url):
         
         draw.text(pos, WATERMARK_TEXT, fill="white", font=font)
         img.save('final.jpg', quality=95)
-        print(f"Watermark applied: {fs}px size.")
+        print("Watermark added.")
         return True
     except Exception as e:
         print(f"Watermark Error: {e}")
         return False
 
 def post_to_forum(p):
-    print("--- Step 3: Posting to Forum via Playwright ---")
-    # Debugging ke liye headless=False rakha hai, kaam karne lage to True kar dena
-    browser = p.chromium.launch(headless=False, args=["--no-sandbox"]) 
+    print("--- Step 3: Posting to Forum ---")
+    # Debugging ke liye headless=False rakha hai taaki dikhe kya ho raha hai
+    browser = p.chromium.launch(headless=False, args=["--no-sandbox"])
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw:
-        print("CRITICAL: EX_COOKIES missing! Make sure to set env variable.")
+        print("CRITICAL: EX_COOKIES environment variable missing!")
         return
         
     context.add_cookies(json.loads(cookies_raw))
@@ -85,82 +85,72 @@ def post_to_forum(p):
     page.set_default_timeout(60000)
     
     try:
-        print(f"Navigating to: {THREAD_REPLY_URL}")
         page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
         
         # Editor load hone ka wait
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
 
-        # ---------------------------------------------------------
-        # FIX START: Iframe Handling for ImgBB
-        # ---------------------------------------------------------
+        # --- IMAGE UPLOAD LOGIC START ---
         print("Opening Upload Popup...")
-        
-        # 1. Trigger button click karo
         page.click('button[data-chevereto-pup-trigger]', force=True)
         
-        # 2. Iframe ke load hone ka wait karo
-        # ImgBB usually ek iframe load karta hai popup ke andar
-        print("Waiting for ImgBB Iframe...")
+        # IFrame ke load hone ka wait karo
+        print("Waiting for Upload Iframe...")
         page.wait_for_selector('iframe', state="attached")
         
-        # Sare iframes me se last wala usually popup hota hai
-        # Hum generic iframe target kar rahe hain
+        # Frame locator banao (Iframe ke andar ghusne ke liye)
+        # Hum last iframe utha rahe hain kyunki popup hamesha last hota hai
         upload_frame = page.frame_locator('iframe').last
         
-        # 3. File Input Frame ke andar dhundo aur file upload karo
-        print("Injecting file into Iframe input...")
-        # Tere HTML ke hisab se input ki ID 'anywhere-upload-input' hai
-        file_input = upload_frame.locator('#anywhere-upload-input') 
-        file_input.set_input_files('final.jpg')
-        print("File set successfully inside iframe.")
-
-        # 4. Upload hone ke baad 'Insert' button ka wait karo
-        # HTML me button ka selector: button[data-action='openerPostMessage']
-        print("Waiting for upload to finish & Insert button...")
+        print("Uploading file inside Iframe...")
+        # Specific ID jo tumhare HTML me thi: 'anywhere-upload-input'
+        upload_frame.locator('#anywhere-upload-input').set_input_files('final.jpg')
         
+        print("File selected. Waiting for 'Insert' button...")
+        
+        # Ab wait karo ki upload complete ho aur INSERT button dikhe
+        # Button selector: button[data-action='openerPostMessage']
         insert_btn = upload_frame.locator("button[data-action='openerPostMessage']")
-        # Upload me time lag sakta hai isliye timeout badhaya
-        insert_btn.wait_for(state="visible", timeout=90000) 
+        insert_btn.wait_for(state="visible", timeout=60000) # 60 sec wait for upload
         
-        # Thoda safety pause
-        time.sleep(1)
+        # Thoda sa delay taaki button clickable ho jaye
+        time.sleep(2)
+        
+        # INSERT CLICK KARO (Ye step missing tha pehle)
         insert_btn.click()
-        print("Clicked 'Insert' - Image code should be in editor now.")
+        print("CLICKED INSERT BUTTON!")
+        # --- IMAGE UPLOAD LOGIC END ---
 
-        # ---------------------------------------------------------
-        # FIX END
-        # ---------------------------------------------------------
-
-        # 5. Check karo ki BBCode editor me aaya ya nahi
-        time.sleep(3) # Insert ke baad thoda wait
+        # Verify karo ki code editor me aaya ya nahi
+        time.sleep(3)
         content = editor.inner_html()
-        
-        if "[IMG]" in content or "img" in content.lower():
-             print("SUCCESS: Image BBCode detected!")
+        if "img" in content.lower() or "[IMG]" in content:
+            print("SUCCESS: Image Code detected in Editor!")
         else:
-             print("WARNING: Link not detected automatically. Checking fallback...")
+            print("WARNING: Image Code NOT detected. Check manually.")
 
-        # 6. Text Message add karna
+        # Text add karo
         editor.click()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\nFresh Desi Bhabhi Update! 🔥\nCheck: {WATERMARK_TEXT}")
+        page.keyboard.type(f"\n\n🔥 New Update 🔥\nSource: {WATERMARK_TEXT}")
+        
         time.sleep(2)
 
-        # 7. Submit
-        print("Submitting post...")
-        submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
-        submit_btn.click()
+        # Submit Post
+        print("Clicking Post Reply...")
+        page.click('button.button--icon--reply')
         
-        print("Post submitted. Waiting for redirection...")
+        # Wait for submission
+        page.wait_for_load_state('networkidle')
         time.sleep(5)
-        page.screenshot(path="final_check.png")
-        print("--- BOT TASK FINISHED ---")
         
+        page.screenshot(path="success_proof.png")
+        print("--- POST SUBMITTED SUCCESSFULLY ---")
+
     except Exception as e:
-        print(f"Forum Error: {e}")
-        page.screenshot(path="error_debug.png")
+        print(f"Error: {e}")
+        page.screenshot(path="error.png")
     finally:
         browser.close()
 
