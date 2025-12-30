@@ -166,4 +166,30 @@ def post_to_forum(p):
         print("Adding text and submitting...")
         page.locator(editor_selector).click()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\n🔥 Desi Bhabhi Latest Leak! 🔥\n
+        page.keyboard.type(f"\n\n🔥 Desi Bhabhi Latest Leak! 🔥\nMore at: {WATERMARK_TEXT}")
+        time.sleep(2)
+
+        submit_btn = page.locator('button:has-text("Post reply")').first
+        if not submit_btn.is_visible():
+            submit_btn = page.locator('.button--icon--reply').first
+            
+        if submit_btn.is_visible():
+            submit_btn.click()
+            page.wait_for_timeout(5000)
+            page.screenshot(path="success_post.png")
+            print("--- BOT TASK FINISHED SUCCESSFULLY ---")
+        else:
+            print("Submit button missing!")
+
+    except Exception as e:
+        print(f"Script Error: {e}")
+        page.screenshot(path="error_crash.png")
+    finally:
+        browser.close()
+
+if __name__ == "__main__":
+    with sync_playwright() as playwright:
+        img_url = get_new_image()
+        if img_url:
+            if add_watermark(img_url):
+                post_to_forum(playwright)
