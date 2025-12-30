@@ -72,14 +72,18 @@ def add_watermark(url):
 def post_to_forum(p):
     print("--- Step 3: Posting to Forum ---")
     
-    # --- IMPORTANT FOR GITHUB ACTIONS: HEADLESS = TRUE ---
     browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
-    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    
+    # FIX: Viewport size badha diya taaki desktop site load ho
+    context = browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        viewport={'width': 1920, 'height': 1080}
+    )
     
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw:
         print("CRITICAL: EX_COOKIES environment variable missing!")
-        sys.exit(1) # Fail the action explicitly
+        sys.exit(1)
         
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
@@ -93,13 +97,25 @@ def post_to_forum(p):
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
         print("Editor found.")
-
-        # --- UPLOAD PROCESS ---
-        print("Clicking Upload Button...")
-        page.click('button[data-chevereto-pup-trigger]', force=True)
         
-        print("Waiting for Iframe...")
-        page.wait_for_selector('iframe', state="attached")
+        # --- UPLOAD PROCESS FIX ---
+        print("Finding Upload Button...")
+        
+        # FIX: Selector change kiya 'js-attachmentUpload' par jo zyada reliable hai
+        upload_btn = page.locator('.js-attachmentUpload').first
+        
+        # FIX: Button ko view me layenge click karne se pehle
+        upload_btn.scroll_into_view_if_needed()
+        time.sleep(1)
+        
+        print("Clicking Upload Button...")
+        upload_btn.click(force=True)
+        
+        print("Waiting for Iframe to appear...")
+        # Iframe wait logic
+        page.wait_for_selector('iframe', state="attached", timeout=30000)
+        
+        # Frame locator
         upload_frame = page.frame_locator('iframe').last
         
         print("Uploading Image inside Iframe...")
@@ -109,7 +125,7 @@ def post_to_forum(p):
         print("Waiting for 'Insert' button...")
         # Wait for Insert Button
         insert_btn = upload_frame.locator("button[data-action='openerPostMessage']")
-        insert_btn.wait_for(state="visible", timeout=90000)
+        insert_btn.wait_for(state="visible", timeout=60000)
         
         # Click Insert
         time.sleep(2)
@@ -121,8 +137,9 @@ def post_to_forum(p):
         time.sleep(5)
         content = editor.inner_html()
         if "img" not in content.lower() and "[IMG]" not in content:
-            print("ERROR: Image code NOT found in editor. Something failed.")
-            sys.exit(1) # Fail the action
+            print("ERROR: Image code NOT found in editor. Taking screenshot.")
+            page.screenshot(path="failed_upload.png")
+            sys.exit(1)
         
         print("Image code verified.")
 
@@ -136,21 +153,21 @@ def post_to_forum(p):
         print("Clicking Post Reply...")
         page.click('button.button--icon--reply')
         
-        # Wait for network idle (post complete hone ka wait)
         print("Waiting for submission to complete...")
         page.wait_for_load_state('networkidle') 
-        time.sleep(5) # Extra safety wait
+        time.sleep(5)
         
         print("--- POST SUCCESSFUL ---")
 
     except Exception as e:
         print(f"❌ FATAL ERROR: {e}")
-        # Screen content print kar rahe hain debug ke liye
         try:
-            print("Current Page Title:", page.title())
+            # Error ke time screenshot le lenge debug ke liye
+            page.screenshot(path="error_state.png")
+            print("Screenshot saved as error_state.png")
         except:
             pass
-        sys.exit(1) # Ye Action ko Red kar dega agar fail hua
+        sys.exit(1)
     finally:
         browser.close()
 
