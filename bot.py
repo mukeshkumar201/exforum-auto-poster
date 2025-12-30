@@ -70,7 +70,7 @@ def add_watermark(url):
         return False
 
 def post_to_forum(p):
-    print("--- Step 3: Posting to Forum (Direct ImgBB Upload) ---")
+    print("--- Step 3: Posting to Forum (Direct Fix) ---")
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
@@ -87,39 +87,38 @@ def post_to_forum(p):
         print(f"Navigating to {THREAD_REPLY_URL}...")
         page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         
-        # Editor load hone ka wait
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
         print("Editor is ready.")
 
-        # 1. Direct File Injection (Hidden Input Target)
-        # XenForo/ImgBB plugin hidden input ko target karna
-        print("Injecting file into forum's hidden upload input...")
-        # Hum hidden input dhund kar seedha file set karenge bina button click kiye
-        file_input = page.locator('input[type="file"]')
+        # --- FIX START ---
+        print("Injecting file into the LAST hidden upload input...")
+        # multiple inputs mein se humesha 'last' wala choose karein taaki strict mode error na aaye
+        file_input = page.locator('input[type="file"]').last
         file_input.set_input_files('final.jpg')
         
-        # 2. Triggering the upload JS (Important for Chevereto/ImgBB)
         print("Triggering upload event...")
-        page.evaluate('() => { const input = document.querySelector("input[type=\'file\']"); if(input) input.dispatchEvent(new Event("change", { bubbles: true })); }')
+        # JavaScript se last input ka change event fire karein
+        page.evaluate('''() => {
+            const inputs = document.querySelectorAll('input[type="file"]');
+            const lastInput = inputs[inputs.length - 1];
+            if(lastInput) lastInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }''')
+        # --- FIX END ---
 
-        # 3. Wait for BBCode/Image Tag in Editor
-        # ImgBB upload hone ke baad editor mein automatic [IMG] code dalta hai
         print("Waiting for image to appear in editor...")
         success_upload = False
-        for i in range(20): # 100 seconds max
+        for i in range(25): # Wait 2 minutes
             time.sleep(5)
             content = editor.inner_html()
-            # Yahan hum check karte hain ki image tag ya BBCode aaya ki nahi
-            if "[IMG]" in content or "img" in content.lower() or "data-p-id" in content or "blob:" in content:
+            if any(marker in content for marker in ["[IMG]", "img", "data-p-id", "blob:"]):
                 print(f"SUCCESS: Image detected in editor (Attempt {i+1})!")
                 success_upload = True
                 break
-            print(f"Checking Editor for Image (Attempt {i+1})...")
+            print(f"Checking Editor (Attempt {i+1})...")
 
         if not success_upload:
-            # Agar direct insert nahi hua toh ho sakta hai "Insert All" button dabana ho
-            print("Image not auto-inserted. Checking for 'Insert' buttons...")
+            print("Image not auto-inserted. Trying fallback 'Insert' button...")
             insert_btn = page.locator('button:has-text("Insert"), .js-attachmentAction').first
             if insert_btn.is_visible():
                 insert_btn.click()
@@ -129,18 +128,17 @@ def post_to_forum(p):
                 success_upload = True
 
         if not success_upload:
-            print("FAILED: Image didn't upload or insert.")
+            print("FAILED: Image upload logic failed.")
             page.screenshot(path="failed_upload.png")
             return
 
-        # 4. Final Text Message
+        # Finalizing Text
         print("Adding message text...")
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\nNew Fresh Desi Update! 🔥\nEnjoy: {WATERMARK_TEXT}")
+        page.keyboard.type(f"\n\nLatest Fresh Desi Update! 🔥\nCheck more: {WATERMARK_TEXT}")
         time.sleep(2)
 
-        # 5. Submit
         print("Submitting post...")
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
