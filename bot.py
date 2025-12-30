@@ -11,7 +11,7 @@ THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
 def get_new_image():
     print(f"--- Step 1: Scraping Image from {PORN_SOURCE} ---")
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
         r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -49,7 +49,6 @@ def add_watermark(url):
         fs = int(h * 0.08)
         
         try:
-            # GitHub Actions/Linux environment font
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
         except:
             font = ImageFont.load_default()
@@ -71,9 +70,9 @@ def add_watermark(url):
         return False
 
 def post_to_forum(p):
-    print("--- Step 3: Posting to Forum ---")
+    print("--- Step 3: Posting to Forum (Chevereto Plugin Logic) ---")
     browser = p.chromium.launch(headless=True)
-    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw:
@@ -85,59 +84,54 @@ def post_to_forum(p):
     page.set_default_timeout(90000)
     
     try:
-        print(f"Navigating to {THREAD_REPLY_URL}...")
-        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
+        page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
         
+        # 1. Check Editor
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
+        print("Editor is ready.")
 
-        # --- ADVANCED UPLOAD LOGIC ---
-        print("Attempting to upload via File Chooser...")
-        try:
-            with page.expect_file_chooser() as fc_info:
-                # Chevereto trigger click
-                page.click('button[data-chevereto-pup-trigger]', force=True)
-            
-            file_chooser = fc_info.value
-            file_chooser.set_files("final.jpg")
-            print("File selected via Chooser. Waiting for upload...")
-        except Exception as e:
-            print(f"File Chooser failed: {e}. Trying direct injection...")
-            # Fallback direct injection
-            page.set_input_files('input[type="file"]', 'final.jpg')
-            # Trigger 'change' event manually so the script knows a file was added
-            page.evaluate('() => { const input = document.querySelector("input[type=\'file\']"); if(input) input.dispatchEvent(new Event("change", { bubbles: true })); }')
+        # 2. Trigger Upload (Using your HTML selector)
+        print("Clicking 'Upload images' button...")
+        # Hum button click karke file chooser ka wait karenge
+        with page.expect_file_chooser() as fc_info:
+            # Selector derived from your provided HTML
+            page.click('button.js-attachmentUpload[data-chevereto-pup-trigger]', force=True)
+        
+        file_chooser = fc_info.value
+        file_chooser.set_files("final.jpg")
+        print("Image injected into Chevereto popup.")
 
-        # --- WAIT FOR EDITOR CONTENT ---
-        print("Monitoring editor for image BBCode/Blob...")
+        # 3. Wait for BBCode Insertion
+        # Jab upload khatam hota hai, plugin editor mein BBCode dal deta hai
+        print("Waiting for BBCode [IMG] to appear in editor...")
         success_upload = False
         for i in range(20): # Max 100 seconds
             time.sleep(5)
             content = editor.inner_html()
-            # XenForo/Chevereto common markers
-            if any(marker in content for marker in ["[IMG]", "img", "blob:", "data-p-id"]):
+            if "[IMG]" in content or "img" in content.lower() or "data-p-id" in content:
                 print(f"SUCCESS: Image detected in editor (Attempt {i+1})!")
                 success_upload = True
                 break
             print(f"Checking Editor (Attempt {i+1})...")
-        
+
         if not success_upload:
-            print("FAILED: Image didn't appear. Capturing debug screenshot...")
+            print("FAILED: Image didn't show up in editor. Checking screenshot...")
             page.screenshot(path="failed_upload.png")
             return
 
-        # --- ADD TEXT AND SUBMIT ---
-        print("Adding message text...")
+        # 4. Finalizing the Post
+        print("Adding caption...")
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\nNew Fresh Update! 🔥\nCheck: {WATERMARK_TEXT}")
-        time.sleep(3)
+        page.keyboard.type(f"\n\nFresh Update! 🔥\nCheck more: {WATERMARK_TEXT}")
+        time.sleep(2)
 
+        # 5. Submit
         print("Submitting post...")
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
-        # Wait for success
         page.wait_for_timeout(10000)
         page.screenshot(path="final_check.png")
         print("--- BOT TASK FINISHED SUCCESSFULLY ---")
@@ -151,10 +145,5 @@ def post_to_forum(p):
 if __name__ == "__main__":
     with sync_playwright() as playwright:
         img_url = get_new_image()
-        if img_url:
-            if add_watermark(img_url):
-                post_to_forum(playwright)
-            else:
-                print("Watermarking failed.")
-        else:
-            print("No new images to post.")
+        if img_url and add_watermark(img_url):
+            post_to_forum(playwright)
