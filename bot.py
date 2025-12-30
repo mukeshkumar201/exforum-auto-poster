@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright
 
 # --- Configuration ---
 HISTORY_FILE = "posted_urls.txt"
-PORN_SOURCE = "https://www.pornpics.com/tags/desi/"
+PORN_SOURCE = "https://www.pornpics.com/tags/indian-pussy/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
 def get_new_image():
