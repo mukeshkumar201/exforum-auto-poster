@@ -59,48 +59,60 @@ def post_to_forum(p, direct_img_url):
         print("Editor ready.")
 
         # 1. Click Main Image Button
-        print("Clicking Toolbar Image Button...")
+        print("Clicking Toolbar Image Button (#insertImage-1)...")
         page.click('#insertImage-1', force=True)
         page.wait_for_timeout(3000)
 
-        # 2. Specifically find and click the 'By URL' tab/button
-        # Froala editor mein ye button aksar popup ke toolbar mein hota hai
+        # 2. Click 'By URL' Tab
         print("Switching to 'By URL' tab...")
-        by_url_tab = page.locator('button[data-cmd="imageByURL"], .fr-command[data-cmd="imageByURL"]').first
+        # XenForo Froala specific popup tab selector
+        by_url_tab = page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first
         
-        # Agar button visible hai toh click karein, warna ho sakta hai pehle se open ho
-        if by_url_tab.is_visible():
+        if by_url_btn_visible := by_url_tab.is_visible():
             by_url_tab.click(force=True)
-            print("'By URL' tab clicked.")
+            print("'By URL' button clicked.")
         else:
-            print("'By URL' tab not visible, checking if already open...")
+            print("By URL button not directly visible, attempting to find in active popup...")
 
-        page.wait_for_timeout(2000)
-
-        # 3. Fill the URL Input Box
-        print("Locating URL input field...")
-        # XenForo Froala selectors for the URL input
-        url_input = page.locator('input[name="src"], .fr-link-input, input[placeholder*="URL"]').first
+        # 3. Handle URL Input (Enhanced Selectors)
+        print("Waiting for URL input box...")
+        # Froala typically uses name="src" or a specific layer class
+        url_input_selectors = [
+            'input[name="src"]',
+            '.fr-image-by-url-layer input[type="text"]',
+            '.fr-link-input',
+            'input[placeholder*="URL"]'
+        ]
         
-        # Wait until it's actually ready for input
-        url_input.wait_for(state="visible", timeout=20000)
-        url_input.fill(direct_img_url)
-        print(f"URL Filled: {direct_img_url}")
+        # Sabhi potential selectors ko check karein
+        input_found = False
+        for selector in url_input_selectors:
+            try:
+                input_field = page.locator(selector).first
+                if input_field.is_visible(timeout=5000):
+                    input_field.fill(direct_img_url)
+                    print(f"URL Filled using selector: {selector}")
+                    input_found = True
+                    break
+            except:
+                continue
 
-        # 4. Click the 'Insert' button in the popup
-        # URL daalne ke baad ek 'Insert' ya blue checkmark button hota hai
-        print("Confirming Insertion...")
+        if not input_found:
+            raise Exception("Could not find the URL input field in any popup layer.")
+
+        # 4. Confirm Insertion
+        print("Inserting image...")
         page.keyboard.press("Enter")
         
-        # Backup: Agar enter se kaam na chale toh Insert button click karein
-        insert_btn = page.locator('.fr-popup button[data-cmd="imageInsertByURL"], .fr-popup button:has-text("Insert")').first
+        # Manual Insert button click agar Enter kaam na kare
+        insert_btn = page.locator('button[data-cmd="imageInsertByURL"], .fr-popup button:has-text("Insert")').first
         if insert_btn.is_visible():
-            insert_btn.click()
+            insert_btn.click(force=True)
         
-        time.sleep(5) # Wait for image to render in editor
+        time.sleep(5) # Image rendering wait
 
-        # 5. Add Text and Submit
-        print("Finalizing message text...")
+        # 5. Finalize Post
+        print("Adding message text...")
         editor.focus()
         page.keyboard.press("Control+End")
         page.keyboard.type("\n\nNew Fresh Desi Update! 🔥")
@@ -110,14 +122,13 @@ def post_to_forum(p, direct_img_url):
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
-        # Wait for success
+        # Success navigation wait
         page.wait_for_timeout(10000)
         page.screenshot(path="final_check.png")
         print("--- BOT TASK FINISHED SUCCESSFULLY ---")
         
     except Exception as e:
         print(f"Forum Error: {e}")
-        # Error ke time screenshot lelo taaki pata chale popup kaisa dikh raha hai
         page.screenshot(path="error_debug_by_url.png")
     finally:
         browser.close()
