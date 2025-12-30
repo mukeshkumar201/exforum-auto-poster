@@ -1,4 +1,4 @@
-import os, requests, time, random, json
+import os, requests, time, random, json, sys
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import sync_playwright
@@ -71,86 +71,86 @@ def add_watermark(url):
 
 def post_to_forum(p):
     print("--- Step 3: Posting to Forum ---")
-    # Debugging ke liye headless=False rakha hai taaki dikhe kya ho raha hai
-    browser = p.chromium.launch(headless=False, args=["--no-sandbox"])
+    
+    # --- IMPORTANT FOR GITHUB ACTIONS: HEADLESS = TRUE ---
+    browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw:
         print("CRITICAL: EX_COOKIES environment variable missing!")
-        return
+        sys.exit(1) # Fail the action explicitly
         
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
     page.set_default_timeout(60000)
     
     try:
+        print(f"Navigating to {THREAD_REPLY_URL}...")
         page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
         
-        # Editor load hone ka wait
+        # Editor check
         editor = page.locator('.fr-element')
         editor.wait_for(state="visible")
+        print("Editor found.")
 
-        # --- IMAGE UPLOAD LOGIC START ---
-        print("Opening Upload Popup...")
+        # --- UPLOAD PROCESS ---
+        print("Clicking Upload Button...")
         page.click('button[data-chevereto-pup-trigger]', force=True)
         
-        # IFrame ke load hone ka wait karo
-        print("Waiting for Upload Iframe...")
+        print("Waiting for Iframe...")
         page.wait_for_selector('iframe', state="attached")
-        
-        # Frame locator banao (Iframe ke andar ghusne ke liye)
-        # Hum last iframe utha rahe hain kyunki popup hamesha last hota hai
         upload_frame = page.frame_locator('iframe').last
         
-        print("Uploading file inside Iframe...")
-        # Specific ID jo tumhare HTML me thi: 'anywhere-upload-input'
+        print("Uploading Image inside Iframe...")
+        # Upload file
         upload_frame.locator('#anywhere-upload-input').set_input_files('final.jpg')
         
-        print("File selected. Waiting for 'Insert' button...")
-        
-        # Ab wait karo ki upload complete ho aur INSERT button dikhe
-        # Button selector: button[data-action='openerPostMessage']
+        print("Waiting for 'Insert' button...")
+        # Wait for Insert Button
         insert_btn = upload_frame.locator("button[data-action='openerPostMessage']")
-        insert_btn.wait_for(state="visible", timeout=60000) # 60 sec wait for upload
+        insert_btn.wait_for(state="visible", timeout=90000)
         
-        # Thoda sa delay taaki button clickable ho jaye
+        # Click Insert
         time.sleep(2)
-        
-        # INSERT CLICK KARO (Ye step missing tha pehle)
         insert_btn.click()
-        print("CLICKED INSERT BUTTON!")
-        # --- IMAGE UPLOAD LOGIC END ---
+        print("Clicked Insert.")
+        # --- END UPLOAD ---
 
-        # Verify karo ki code editor me aaya ya nahi
-        time.sleep(3)
+        # Validation
+        time.sleep(5)
         content = editor.inner_html()
-        if "img" in content.lower() or "[IMG]" in content:
-            print("SUCCESS: Image Code detected in Editor!")
-        else:
-            print("WARNING: Image Code NOT detected. Check manually.")
+        if "img" not in content.lower() and "[IMG]" not in content:
+            print("ERROR: Image code NOT found in editor. Something failed.")
+            sys.exit(1) # Fail the action
+        
+        print("Image code verified.")
 
-        # Text add karo
+        # Add Text
         editor.click()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\n🔥 New Update 🔥\nSource: {WATERMARK_TEXT}")
-        
-        time.sleep(2)
+        page.keyboard.type(f"\n\n🔥 Hot Update 🔥\nSource: {WATERMARK_TEXT}")
+        time.sleep(1)
 
-        # Submit Post
+        # Submit
         print("Clicking Post Reply...")
         page.click('button.button--icon--reply')
         
-        # Wait for submission
-        page.wait_for_load_state('networkidle')
-        time.sleep(5)
+        # Wait for network idle (post complete hone ka wait)
+        print("Waiting for submission to complete...")
+        page.wait_for_load_state('networkidle') 
+        time.sleep(5) # Extra safety wait
         
-        page.screenshot(path="success_proof.png")
-        print("--- POST SUBMITTED SUCCESSFULLY ---")
+        print("--- POST SUCCESSFUL ---")
 
     except Exception as e:
-        print(f"Error: {e}")
-        page.screenshot(path="error.png")
+        print(f"❌ FATAL ERROR: {e}")
+        # Screen content print kar rahe hain debug ke liye
+        try:
+            print("Current Page Title:", page.title())
+        except:
+            pass
+        sys.exit(1) # Ye Action ko Red kar dega agar fail hua
     finally:
         browser.close()
 
@@ -160,3 +160,5 @@ if __name__ == "__main__":
         if img_url:
             if add_watermark(img_url):
                 post_to_forum(playwright)
+        else:
+            print("No new images found.")
