@@ -49,6 +49,7 @@ def add_watermark(url):
         fs = int(h * 0.08)
         
         try:
+            # GitHub Actions/Linux environment font
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
         except:
             font = ImageFont.load_default()
@@ -81,55 +82,62 @@ def post_to_forum(p):
         
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
+    page.set_default_timeout(90000)
     
     try:
+        print(f"Navigating to {THREAD_REPLY_URL}...")
         page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         
-        # Editor check
         editor = page.locator('.fr-element')
-        editor.wait_for(state="visible", timeout=30000)
+        editor.wait_for(state="visible")
 
-        # 1. Trigger Plugin
-        print("Opening Upload Dialog...")
-        page.click('button[data-chevereto-pup-trigger]', force=True)
-        time.sleep(3)
+        # --- ADVANCED UPLOAD LOGIC ---
+        print("Attempting to upload via File Chooser...")
+        try:
+            with page.expect_file_chooser() as fc_info:
+                # Chevereto trigger click
+                page.click('button[data-chevereto-pup-trigger]', force=True)
+            
+            file_chooser = fc_info.value
+            file_chooser.set_files("final.jpg")
+            print("File selected via Chooser. Waiting for upload...")
+        except Exception as e:
+            print(f"File Chooser failed: {e}. Trying direct injection...")
+            # Fallback direct injection
+            page.set_input_files('input[type="file"]', 'final.jpg')
+            # Trigger 'change' event manually so the script knows a file was added
+            page.evaluate('() => { const input = document.querySelector("input[type=\'file\']"); if(input) input.dispatchEvent(new Event("change", { bubbles: true })); }')
 
-        # 2. Upload File - Specific Selector
-        print("Injecting file into hidden input...")
-        # Kabhi kabhi multiple inputs hote hain, hum 'last' wala try karte hain jo aksar plugin ka hota hai
-        file_input = page.locator('input[type="file"]')
-        file_input.last.set_input_files('final.jpg')
-        print("File injected. Waiting for upload completion...")
-
-        # 3. Wait for BBCode (Critical Fix)
-        # Hum 90 seconds tak wait karenge jab tak [IMG] tag na dikh jaye
+        # --- WAIT FOR EDITOR CONTENT ---
+        print("Monitoring editor for image BBCode/Blob...")
         success_upload = False
-        for i in range(18): # 18 * 5 = 90 seconds
+        for i in range(20): # Max 100 seconds
             time.sleep(5)
             content = editor.inner_html()
-            print(f"Checking Editor (Attempt {i+1})...")
-            if "[IMG]" in content or "img" in content.lower() or "data-p-id" in content:
-                print("SUCCESS: Image detected in editor!")
+            # XenForo/Chevereto common markers
+            if any(marker in content for marker in ["[IMG]", "img", "blob:", "data-p-id"]):
+                print(f"SUCCESS: Image detected in editor (Attempt {i+1})!")
                 success_upload = True
                 break
+            print(f"Checking Editor (Attempt {i+1})...")
         
         if not success_upload:
-            print("FAILED: Image didn't appear in editor. Skipping post to avoid empty message.")
+            print("FAILED: Image didn't appear. Capturing debug screenshot...")
             page.screenshot(path="failed_upload.png")
             return
 
-        # 4. Text Message add karna
+        # --- ADD TEXT AND SUBMIT ---
+        print("Adding message text...")
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\nNew Hot Desi Update! 🔥\nVisit: {WATERMARK_TEXT}")
-        time.sleep(2)
+        page.keyboard.type(f"\n\nNew Fresh Update! 🔥\nCheck: {WATERMARK_TEXT}")
+        time.sleep(3)
 
-        # 5. Submit
         print("Submitting post...")
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
-        # Confirmation
+        # Wait for success
         page.wait_for_timeout(10000)
         page.screenshot(path="final_check.png")
         print("--- BOT TASK FINISHED SUCCESSFULLY ---")
@@ -143,5 +151,10 @@ def post_to_forum(p):
 if __name__ == "__main__":
     with sync_playwright() as playwright:
         img_url = get_new_image()
-        if img_url and add_watermark(img_url):
-            post_to_forum(playwright)
+        if img_url:
+            if add_watermark(img_url):
+                post_to_forum(playwright)
+            else:
+                print("Watermarking failed.")
+        else:
+            print("No new images to post.")
