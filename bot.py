@@ -49,6 +49,7 @@ def add_watermark(url):
         fs = int(h * 0.08)
         
         try:
+            # Linux font path for GitHub Actions
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
         except:
             font = ImageFont.load_default()
@@ -57,20 +58,21 @@ def add_watermark(url):
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         pos = (w - tw - 50, h - th - 50)
 
+        # Black outline
         for adj in range(-2, 3):
             for b in range(-2, 3):
                 draw.text((pos[0]+adj, pos[1]+b), WATERMARK_TEXT, fill="black", font=font)
         
         draw.text(pos, WATERMARK_TEXT, fill="white", font=font)
         img.save('final.jpg', quality=95)
-        print("Watermark applied.")
+        print("Watermark applied successfully.")
         return True
     except Exception as e:
         print(f"Watermark Error: {e}")
         return False
 
 def post_to_forum(p):
-    print("--- Step 3: Posting to Forum (Direct Fix) ---")
+    print("--- Step 3: Posting Image to Froala Editor ---")
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
@@ -81,70 +83,76 @@ def post_to_forum(p):
         
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
-    page.set_default_timeout(90000)
+    page.set_default_timeout(100000)
     
     try:
-        print(f"Navigating to {THREAD_REPLY_URL}...")
+        print(f"Opening thread: {THREAD_REPLY_URL}")
         page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         
-        editor = page.locator('.fr-element')
+        # 1. Check Editor (fr-element)
+        editor = page.locator('.fr-element').first
         editor.wait_for(state="visible")
-        print("Editor is ready.")
+        print("Froala Editor is ready.")
 
-        # --- FIX START ---
-        print("Injecting file into the LAST hidden upload input...")
-        # multiple inputs mein se humesha 'last' wala choose karein taaki strict mode error na aaye
+        # 2. Upload Image Direct to Hidden Input
+        # XenForo ke Chevereto plugin mein 2 inputs hote hain, hum 'last' wala use karenge
+        print("Injecting file into hidden input...")
+        # Strict mode error se bachne ke liye .last() use kiya hai
         file_input = page.locator('input[type="file"]').last
         file_input.set_input_files('final.jpg')
-        
-        print("Triggering upload event...")
-        # JavaScript se last input ka change event fire karein
+
+        # 3. Trigger JS Change Event (This starts the upload)
         page.evaluate('''() => {
             const inputs = document.querySelectorAll('input[type="file"]');
             const lastInput = inputs[inputs.length - 1];
-            if(lastInput) lastInput.dispatchEvent(new Event('change', { bubbles: true }));
+            if(lastInput) {
+                lastInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         }''')
-        # --- FIX END ---
+        print("Upload triggered via JavaScript.")
 
-        print("Waiting for image to appear in editor...")
+        # 4. Wait for Image to appear in Editor
+        # Jab upload success hota hai, Froala editor ke andar [IMG] ya <img> tag aa jata hai
+        print("Waiting for photo to appear in editor...")
         success_upload = False
-        for i in range(25): # Wait 2 minutes
+        for i in range(25): # 125 seconds total wait
             time.sleep(5)
             content = editor.inner_html()
             if any(marker in content for marker in ["[IMG]", "img", "data-p-id", "blob:"]):
-                print(f"SUCCESS: Image detected in editor (Attempt {i+1})!")
+                print(f"SUCCESS: Photo detected in editor (Attempt {i+1})!")
                 success_upload = True
                 break
-            print(f"Checking Editor (Attempt {i+1})...")
+            print(f"Checking editor... (Attempt {i+1})")
 
+        # Fallback: Agar auto-insert nahi hua toh 'Insert Full Image' button try karein
         if not success_upload:
-            print("Image not auto-inserted. Trying fallback 'Insert' button...")
+            print("Checking for manual 'Insert' button...")
             insert_btn = page.locator('button:has-text("Insert"), .js-attachmentAction').first
             if insert_btn.is_visible():
                 insert_btn.click()
                 time.sleep(2)
-                full_img = page.locator('button:has-text("Full image")').first
-                if full_img.is_visible(): full_img.click()
+                page.locator('button:has-text("Full image")').first.click()
                 success_upload = True
 
         if not success_upload:
-            print("FAILED: Image upload logic failed.")
+            print("FAILED: Image could not be uploaded.")
             page.screenshot(path="failed_upload.png")
             return
 
-        # Finalizing Text
+        # 5. Add Custom Text
         print("Adding message text...")
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n\nLatest Fresh Desi Update! 🔥\nCheck more: {WATERMARK_TEXT}")
+        page.keyboard.type(f"\n\nNew Fresh Desi Update! 🔥\nVisit: {WATERMARK_TEXT}")
         time.sleep(2)
 
-        print("Submitting post...")
+        # 6. Submit Post
+        print("Clicking Submit button...")
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         
         page.wait_for_timeout(10000)
-        page.screenshot(path="final_check.png")
+        page.screenshot(path="final_result.png")
         print("--- BOT TASK FINISHED SUCCESSFULLY ---")
         
     except Exception as e:
