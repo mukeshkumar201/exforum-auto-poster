@@ -1,0 +1,42 @@
+name: Hourly Poster image
+
+on:
+  schedule:
+    # Har 20 minute mein automatic trigger hoga
+    - cron: '*/20 * * * *'
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install playwright pillow requests beautifulsoup4
+          python -m playwright install chromium
+
+      - name: Run Bot
+        env:
+          EX_USER: ${{ secrets.EX_USER }}
+          EX_PASS: ${{ secrets.EX_PASS }}
+          EX_COOKIES: ${{ secrets.EX_COOKIES }}
+        run: python bot.py
+
+      - name: Commit History
+        if: always()
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          touch posted_urls.txt
+          git add posted_urls.txt
+          git commit -m "Update history" || echo "No changes"
+          git push || echo "No changes"
