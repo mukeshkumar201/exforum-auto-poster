@@ -3,6 +3,7 @@ import requests
 import time
 import random
 import json
+import base64
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import sync_playwright
@@ -78,16 +79,12 @@ def add_watermark(url):
         print(f"Watermark Error: {e}")
         return False
 
-# --- Step 3: Posting to Forum (ULTIMATE FIX) ---
+# --- Step 3: Posting to Forum (JS INJECTION METHOD) ---
 def post_to_forum(p):
-    print("--- Step 3: Posting to Forum with Drag & Drop Logic ---")
+    print("--- Step 3: Posting via JS Injection (No Buttons Needed) ---")
     
-    # Permissions grant kar rahe hain taaki clipboard/files access easy ho
-    browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-web-security"])
-    context = browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        permissions=['clipboard-read', 'clipboard-write']
-    )
+    browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw:
@@ -100,105 +97,73 @@ def post_to_forum(p):
     
     try:
         print(f"Navigating to: {THREAD_REPLY_URL}")
-        page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded")
+        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         
         # Editor load hone ka wait
-        editor = page.locator('.fr-element')
-        editor.wait_for(state="visible")
+        editor_selector = '.fr-element'
+        page.wait_for_selector(editor_selector, state="visible")
         print("Editor loaded.")
 
-        # --- STRATEGY 1: DIRECT DRAG AND DROP (Best for XenForo) ---
-        print("Attempting Method 1: Direct Drag & Drop to Editor...")
-        try:
-            # Playwright ka set_input_files agar 'div' par use karein toh wo Drop event simulate karta hai
-            page.locator('.fr-element').set_input_files("final.jpg")
-            print("Drag & Drop command sent.")
-            time.sleep(3) # Wait for upload to start
-        except Exception as e:
-            print(f"Drag & Drop failed: {e}")
+        # --- MAGIC: Convert Image to Base64 & Inject ---
+        print("Preparing image for injection...")
+        with open("final.jpg", "rb") as image_file:
+            b64_string = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        print("Injecting image via JavaScript Drag-Event...")
+        
+        # Ye JavaScript browser ke andar run karegi. 
+        # Ye 'fake' file banayegi aur editor par 'drop' kar degi.
+        page.evaluate(f"""
+            async () => {{
+                const b64 = "{b64_string}";
+                const mime = "image/jpeg";
+                const filename = "final.jpg";
 
-        # Check agar Method 1 se upload ho gaya
-        if check_upload_success(editor):
-            submit_post(page)
+                // Base64 se Blob banana
+                const res = await fetch(`data:${{mime}};base64,${{b64}}`);
+                const blob = await res.blob();
+                const file = new File([blob], filename, {{ type: mime }});
+
+                // DataTransfer object banana (Drag event ke liye)
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                const list = dt.files;
+
+                // Editor dhoondna
+                const editor = document.querySelector('{editor_selector}');
+                
+                // Drop Event Fire karna
+                const event = new DragEvent('drop', {{
+                    bubbles: true,
+                    cancelable: true,
+                    dataTransfer: dt
+                }});
+                editor.dispatchEvent(event);
+            }}
+        """)
+        
+        print("JS Injection executed. Waiting for upload to process...")
+        time.sleep(5) # Thoda wait taaki upload start ho jaye
+
+        # --- VERIFICATION ---
+        uploaded = False
+        for i in range(15): # 45 seconds total wait
+            content = page.locator(editor_selector).inner_html()
+            # [IMG] tag ya <img src="..."> dhoondo
+            if "[IMG]" in content or "<img" in content.lower():
+                print(f"SUCCESS: Image code detected in editor!")
+                uploaded = True
+                break
+            print(f"Processing upload... {i+1}/15")
+            time.sleep(3)
+
+        if not uploaded:
+            print("ERROR: Upload failed. Check 'upload_failed.png'.")
+            page.screenshot(path="upload_failed.png")
             return
 
-        # --- STRATEGY 2: HIDDEN INPUT MANIPULATION (Fallback) ---
-        print("Method 1 failed/slow. Attempting Method 2: Hidden Input Injection...")
-        try:
-            # Input ko visible banao
-            page.evaluate("""
-                const input = document.querySelector('input[type="file"]');
-                if(input) {
-                    input.style.display = 'block'; 
-                    input.style.visibility = 'visible';
-                    input.style.position = 'fixed';
-                    input.style.zIndex = '9999';
-                    input.style.top = '0';
-                    input.style.left = '0';
-                }
-            """)
-            # File set karo
-            page.set_input_files('input[type="file"]', 'final.jpg')
-            
-            # MULTIPLE Event Triggers (Bahut zaroori hai)
-            page.evaluate("""
-                const input = document.querySelector('input[type="file"]');
-                if(input) {
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-            """)
-            print("Force injection & events dispatched.")
-        except Exception as e:
-            print(f"Injection failed: {e}")
-
-        # Final Wait for upload
-        if check_upload_success(editor):
-            submit_post(page)
-        else:
-            print("ERROR: All upload methods failed. Saving debug screenshot.")
-            page.screenshot(path="upload_failed_final.png")
-
-    except Exception as e:
-        print(f"Forum Error: {e}")
-        page.screenshot(path="error_crash.png")
-    finally:
-        browser.close()
-
-def check_upload_success(editor_locator):
-    print("Waiting for BBCode ([IMG] tag)...")
-    for i in range(15): # 45 seconds total wait
-        content = editor_locator.inner_html()
-        if "[IMG]" in content or "<img" in content.lower():
-            print(f"SUCCESS: Image detected in editor after {i*3}s!")
-            return True
-        time.sleep(3)
-    return False
-
-def submit_post(page):
-    print("Adding text and submitting...")
-    # Text append karna
-    page.locator('.fr-element').click()
-    page.keyboard.press("Control+End")
-    page.keyboard.type(f"\n\n🔥 Desi Bhabhi Viral Update! 🔥\nSource: {WATERMARK_TEXT}")
-    time.sleep(2)
-
-    # Submit Button Logic
-    submit_btn = page.locator('button:has-text("Post reply")').first
-    if not submit_btn.is_visible():
-            submit_btn = page.locator('.button--icon--reply').first
-    
-    if submit_btn.is_visible():
-        submit_btn.click()
-        page.wait_for_timeout(5000)
-        page.screenshot(path="success_post.png")
-        print("--- BOT TASK FINISHED SUCCESSFULLY ---")
-    else:
-        print("Submit button not found!")
-
-if __name__ == "__main__":
-    with sync_playwright() as playwright:
-        img_url = get_new_image()
-        if img_url:
-            if add_watermark(img_url):
-                post_to_forum(playwright)
+        # --- SUBMIT ---
+        print("Adding text and submitting...")
+        page.locator(editor_selector).click()
+        page.keyboard.press("Control+End")
+        page.keyboard.type(f"\n\n🔥 Desi Bhabhi Latest Leak! 🔥\n
