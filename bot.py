@@ -118,11 +118,12 @@ def post_to_forum(p, direct_img_url):
         print("Adding Large text BELOW the image...")
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type("\n[SIZE=6][B]visit website - freepornx.site[/B][/SIZE]")
+        page.keyboard.type("\n[SIZE=10][B]New Fresh Desi Update! 🔥[/B][/SIZE]")
+        page.keyboard.type("\n[SIZE=10][B]visit website - freepornx.site[/B][/SIZE]")
 
         # 5. Finalize Post
         print("Adding final caption...")
-        page.keyboard.type("\n\nNew Fresh Desi Update! 🔥")
+      
         time.sleep(2)
 
         print("Submitting post...")
