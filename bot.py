@@ -14,9 +14,7 @@ WATERMARK_VARIANTS = [
 
 def get_new_image():
     print("--- Step 1: Scraping Image ---")
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
         r = requests.get("https://www.pornpics.com/tags/desi/", headers=headers, timeout=30)
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -26,53 +24,54 @@ def get_new_image():
         
         r_gal = requests.get(target_gal, headers=headers, timeout=30)
         gal_soup = BeautifulSoup(r_gal.text, 'html.parser')
+        
+        # History check
         posted = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
         
-        valid_imgs = [img.get('data-src') or img.get('src') for img in gal_soup.find_all('img') if "pornpics.com" in (img.get('data-src') or img.get('src', ''))]
+        # --- FIXED FILTERING LOGIC ---
+        valid_imgs = []
+        for img in gal_soup.find_all('img'):
+            src = img.get('data-src') or img.get('src', '')
+            # Sirf .jpg uthao, logo aur .svg ko reject karo
+            if ".svg" not in src and any(ext in src.lower() for ext in [".jpg", ".jpeg"]):
+                if "pornpics.com" in src:
+                    valid_imgs.append(src)
+
         new_imgs = [u if u.startswith('http') else "https:" + u for u in valid_imgs if u not in posted]
         
         if new_imgs: 
             img_url = random.choice(new_imgs).replace('/460/', '/1280/')
-            print(f"Found Image: {img_url}")
+            print(f"Found Real Image: {img_url}")
             return img_url
-        return None
+        else:
+            print("No new images found in this gallery.")
+            return None
     except Exception as e:
         print(f"Scrape Error: {e}"); return None
 
 def add_watermark(url):
     img_wm = random.choice(WATERMARK_VARIANTS)
     print(f"--- Step 2: Watermarking with [{img_wm}] ---")
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.pornpics.com/'
-    }
+    headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.pornpics.com/'}
     try:
         r = requests.get(url, headers=headers, timeout=30)
-        if r.status_code != 200:
-            print(f"Failed to download image. Status: {r.status_code}")
-            return None
-            
-        with open('temp.jpg', 'wb') as f: 
-            f.write(r.content)
-            
+        with open('temp.jpg', 'wb') as f: f.write(r.content)
+        
         img = Image.open('temp.jpg').convert("RGB")
         img.thumbnail((1280, 1280), Image.LANCZOS)
         draw = ImageDraw.Draw(img)
         w, h = img.size
         fs = int(h * 0.065)
         
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
-        except:
-            font = ImageFont.load_default()
+        try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
+        except: font = ImageFont.load_default()
             
         bbox = draw.textbbox((0, 0), img_wm, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         pos = random.choice([(w-tw-40, h-th-40), (40, h-th-40), (w-tw-40, 40), (40, 40)])
         
         for adj in range(-1, 2):
-            for b in range(-1, 2): 
-                draw.text((pos[0]+adj, pos[1]+b), img_wm, fill="black", font=font)
+            for b in range(-1, 2): draw.text((pos[0]+adj, pos[1]+b), img_wm, fill="black", font=font)
         draw.text(pos, img_wm, fill="white", font=font)
         
         img.save('final.jpg', "JPEG", quality=85)
@@ -84,7 +83,6 @@ def upload_and_post(p, used_wm):
     print("--- Step 3 & 4: Uploading & Posting ---")
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(viewport={'width': 1280, 'height': 720})
-    
     cookies_raw = os.environ.get('EX_COOKIES')
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
@@ -98,8 +96,8 @@ def upload_and_post(p, used_wm):
         
         page.wait_for_selector('textarea', timeout=60000)
         all_text = page.content()
-        
         thumb_match = re.search(r'https://thumbs\d+\.imagebam\.com/[\w/]+_t\.(?:jpeg|jpg|png|webp)', all_text)
+        
         if not thumb_match:
             print("Link not found on ImageBam."); return
 
@@ -120,6 +118,7 @@ def upload_and_post(p, used_wm):
         page.locator('button.button--icon--reply').first.click()
         time.sleep(8)
         
+        # History update
         with open(HISTORY_FILE, "a") as f: f.write(direct_url + "\n")
         print("--- ALL STEPS SUCCESSFUL ---")
 
