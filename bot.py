@@ -1,141 +1,101 @@
-import os, requests, time, random, json, re
+import os, requests, time, random, json
 from bs4 import BeautifulSoup
-from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import sync_playwright
 
 # --- Configuration ---
-HISTORY_FILE = "posted_images.txt"
+HISTORY_FILE = "posted_urls.txt"
+PORN_SOURCE = "https://www.pornpics.com/tags/indian-pussy/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
-WATERMARK_VARIANTS = [
-    "freepornx [dot] site", "freepornx {dot} site", "freepornx (dot) site", 
-    "f\u200Breepornx\u200B.\u200Bsite", "freepornx [.] site", "freepornx DOT site"
+# Tera Random Captions List
+CAPTIONS_LIST = [
+    "freepornx [dot] site", "freepornx {dot} site", "freepornx (dot) site",
+    "freepornx | site", "f r e e p o r n x . s i t e", "f\u200Breepornx\u200B.\u200Bsite",
+    "freepornx [.] site", "freepornx ( . ) site", "freepornx / site",
+    "FreePornX.Site", "freepornx DOT site", "freepornx * site",
+    "freepornx ~ site", "freepornx ::: site", "f.r.e.e.p.o.r.n.x.s.i.t.e",
+    "freepornx @ site", "freepornx_site", "FrEePoRnX.SiTe",
+    "f-r-e-e-p-o-r-n-x-site", "freepornx [at] site"
 ]
 
 def get_new_image():
-    print("--- Step 1: Scraping Image ---")
+    # ... (Keep your existing get_new_image function as it is) ...
+    print(f"--- Step 1: Scraping Image from {PORN_SOURCE} ---")
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     try:
-        r = requests.get("https://www.pornpics.com/tags/desi/", headers=headers, timeout=30)
+        r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
         soup = BeautifulSoup(r.text, 'html.parser')
         links = [a['href'] for a in soup.find_all('a', href=True) if "/galleries/" in a['href']]
+        if not links: return None
         target_gal = random.choice(links)
-        if not target_gal.startswith('http'): target_gal = "https://www.pornpics.com" + target_gal
-        
+        target_gal = target_gal if target_gal.startswith('http') else "https://www.pornpics.com" + target_gal
         r_gal = requests.get(target_gal, headers=headers, timeout=30)
         gal_soup = BeautifulSoup(r_gal.text, 'html.parser')
         posted = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
-        
-        valid_imgs = []
-        for img in gal_soup.find_all('img'):
-            src = img.get('data-src') or img.get('src', '')
-            if ".svg" not in src and any(ext in src.lower() for ext in [".jpg", ".jpeg"]):
-                if "pornpics.com" in src: valid_imgs.append(src)
-
+        valid_imgs = [img.get('data-src') or img.get('src') for img in gal_soup.find_all('img') if "pornpics.com" in (img.get('data-src') or img.get('src', ''))]
         new_imgs = [u if u.startswith('http') else "https:" + u for u in valid_imgs if u not in posted]
-        if new_imgs: 
-            img_url = random.choice(new_imgs).replace('/460/', '/1280/')
-            print(f"Found Real Image: {img_url}")
+        if new_imgs:
+            img_url = random.choice(new_imgs)
+            with open(HISTORY_FILE, "a") as f: f.write(img_url + "\n")
             return img_url
         return None
-    except Exception as e:
-        print(f"Scrape Error: {e}"); return None
+    except: return None
 
-def add_watermark(url):
-    img_wm = random.choice(WATERMARK_VARIANTS)
-    print(f"--- Step 2: Watermarking with [{img_wm}] ---")
-    headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.pornpics.com/'}
-    try:
-        r = requests.get(url, headers=headers, timeout=30)
-        with open('temp.jpg', 'wb') as f: f.write(r.content)
-        img = Image.open('temp.jpg').convert("RGB")
-        img.thumbnail((1280, 1280), Image.LANCZOS)
-        draw = ImageDraw.Draw(img)
-        w, h = img.size
-        fs = int(h * 0.065)
-        try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", fs)
-        except: font = ImageFont.load_default()
-        bbox = draw.textbbox((0, 0), img_wm, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        pos = random.choice([(w-tw-40, h-th-40), (40, h-th-40), (w-tw-40, 40), (40, 40)])
-        for adj in range(-1, 2):
-            for b in range(-1, 2): draw.text((pos[0]+adj, pos[1]+b), img_wm, fill="black", font=font)
-        draw.text(pos, img_wm, fill="white", font=font)
-        img.save('final.jpg', "JPEG", quality=85)
-        return img_wm
-    except Exception as e:
-        print(f"Watermark Error: {e}"); return None
-
-def upload_and_post(p, used_wm):
-    print("--- Step 3 & 4: Uploading & Posting ---")
+def post_to_forum(p, direct_img_url):
+    # Har post ke liye ek naya random caption pick karega
+    selected_caption = random.choice(CAPTIONS_LIST)
+    
+    print(f"--- Step 2: Posting with Caption: {selected_caption} ---")
     browser = p.chromium.launch(headless=True)
-    context = browser.new_context(viewport={'width': 1280, 'height': 720})
+    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    
     cookies_raw = os.environ.get('EX_COOKIES')
+    if not cookies_raw: return
+        
     context.add_cookies(json.loads(cookies_raw))
     page = context.new_page()
-
+    page.set_default_timeout(60000)
+    
     try:
-        # 1. ImageBam Upload
-        print("Opening ImageBam...")
-        page.goto("https://www.imagebam.com/", wait_until="networkidle", timeout=90000)
+        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
+        editor = page.locator('.fr-element').first
+        editor.wait_for(state="visible")
+
+        # --- ABOVE IMAGE: Random Text ---
+        editor.focus()
+        page.keyboard.type(f"[SIZE=6][B]visit website - {selected_caption}[/B][/SIZE]\n")
+        time.sleep(1)
+
+        # 1. Click Main Image Button
+        page.click('#insertImage-1', force=True)
+        page.wait_for_timeout(3000)
+
+        # 2. Click 'By URL' Tab & Handle URL Input
+        # (Using your existing logic here for the popup)
+        by_url_tab = page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first
+        by_url_tab.click(force=True)
         
-        # File select
-        page.set_input_files('input[type="file"]', 'final.jpg')
-        print("File selected. Waiting for form elements...")
-        time.sleep(5)
+        page.locator('input[name="src"], .fr-image-by-url-layer input[type="text"]').first.fill(direct_img_url)
+        page.keyboard.press("Enter")
+        time.sleep(5) 
 
-        # --- MANDATORY ADULT SELECTION (With Fallback) ---
-        try:
-            # Method 1: Dropdown by name
-            selector = 'select[name="content_type"]'
-            page.wait_for_selector(selector, state="visible", timeout=30000)
-            page.select_option(selector, '1') 
-            print("Selected 'Adult' via dropdown.")
-        except:
-            # Method 2: Click via label/text (Agar UI badal gaya ho)
-            print("Dropdown not found, trying text-based selection...")
-            page.locator("text=Adult content").first.click()
-            print("Clicked 'Adult content' label.")
+        # --- BELOW IMAGE: Random Text ---
+        editor.focus()
+        page.keyboard.press("Control+End")
+        # Niche wala caption thoda bada (SIZE 7) aur unique
+        page.keyboard.type(f"\n[SIZE=7][B]New Fresh Desi Update! 🔥[/B][/SIZE]")
+        page.keyboard.type(f"\n[SIZE=6][B]visit website - {selected_caption}[/B][/SIZE]")
 
-        time.sleep(2)
-
-        # Upload button click
-        upload_btn = page.locator('button:has-text("Start upload"), #btn-upload, input[type="submit"]')
-        upload_btn.wait_for(state="visible", timeout=30000)
-        upload_btn.click()
-        print("Upload button clicked.")
-
-        # Link extraction
-        page.wait_for_selector('textarea', timeout=90000)
-        all_text = page.content()
-        thumb_match = re.search(r'https://thumbs\d+\.imagebam\.com/[\w/]+_t\.(?:jpeg|jpg|png|webp)', all_text)
+        # Submit
+        print("Submitting post...")
+        submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
+        submit_btn.click()
         
-        if not thumb_match:
-            print("Direct link fail ho gaya."); return
-
-        direct_url = thumb_match.group(0).replace('thumbs', 'images').replace('_t.', '.')
-        print(f"Direct Link ready: {direct_url}")
-
-        # 2. Forum Post
-        print("Forum par ja rahe hain...")
-        page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded", timeout=60000)
-        editor = page.locator('.fr-element')
-        editor.wait_for(state="visible", timeout=40000)
+        page.wait_for_timeout(10000)
+        print("--- BOT TASK FINISHED SUCCESSFULLY ---")
         
-        full_content = f"[IMG]{direct_url}[/IMG]\n\nFresh Update! 🔥\nCheck more: {used_wm}\n#Desi #Hot #Bhabhi"
-        
-        editor.click()
-        page.keyboard.type(full_content)
-        time.sleep(2)
-        page.locator('button.button--icon--reply').first.click()
-        time.sleep(10)
-        
-        with open(HISTORY_FILE, "a") as f: f.write(direct_url + "\n")
-        print("--- SAB KUCH SUCCESSFUL RAHA ---")
-
     except Exception as e:
-        print(f"Fatal Error: {e}")
-        page.screenshot(path="debug_error.png") 
+        print(f"Forum Error: {e}")
     finally:
         browser.close()
 
@@ -143,6 +103,4 @@ if __name__ == "__main__":
     with sync_playwright() as playwright:
         img_url = get_new_image()
         if img_url:
-            used_wm = add_watermark(img_url)
-            if used_wm:
-                upload_and_post(playwright, used_wm)
+            post_to_forum(playwright, img_url)
