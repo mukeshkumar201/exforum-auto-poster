@@ -7,13 +7,13 @@ HISTORY_FILE = "posted_urls.txt"
 PORN_SOURCE = "https://www.pornpics.com/tags/indian-pussy/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
-# 1. Top Desi Fillers (Domain variant ke saath)
+# 1. Top Desi Fillers (Inke saath domain variant aayega)
 TOP_FILLERS = [
     "Dekho naya mast maal:", "Bhabhi ka jalwa yahan dekho:", "Garmi badhane wala item:", 
     "Jaldi aao asli maza yahan hai:", "Ekdam fresh desi tadka:", "Bhabhi ki jawani dekh lo:"
 ]
 
-# 2. Bottom Spicy Phrases (Strictly NO LINK - Just Desi Vibes)
+# 2. Bottom Spicy Phrases (Strictly NO LINK - Sirf Comments)
 BOTTOM_PHRASES = [
     "Maza aa gaya dekh ke! 🔥", "Kya mast cheez hai bhabhi! 🔞", "Ekdam kadak maal hai! 🌶️",
     "Aisi bhabhi mil jaye toh din ban jaye! 💦", "Jawaani ekdam full hai! 🍑",
@@ -29,6 +29,7 @@ CAPTION_VARIANTS = [
 ]
 
 def get_new_image():
+    print(f"--- Step 1: Scraping Image ---")
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
@@ -50,65 +51,59 @@ def get_new_image():
     except: return None
 
 def post_to_forum(p, direct_img_url):
+    # Har baar unique combo
     top_text = f"{random.choice(TOP_FILLERS)} {random.choice(CAPTION_VARIANTS)}"
     bottom_text = random.choice(BOTTOM_PHRASES)
     
-    print(f"--- Posting Strategy ---")
+    print(f"--- Step 2: Posting ---")
     print(f"Top: {top_text} | Bottom: {bottom_text}")
 
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    
     cookies_raw = os.environ.get('EX_COOKIES')
+    if not cookies_raw: return
     context.add_cookies(json.loads(cookies_raw))
+    
     page = context.new_page()
+    page.set_default_timeout(60000)
     
     try:
-        page.goto(THREAD_REPLY_URL, wait_until="load", timeout=90000)
+        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         editor = page.locator('.fr-element').first
-        editor.wait_for(state="visible", timeout=60000)
+        editor.wait_for(state="visible")
 
-        # 1. Top Content
+        # --- 1. Top Text (Filler + Domain) ---
         editor.focus()
         page.keyboard.type(f"[SIZE=6][B]{top_text}[/B][/SIZE]\n")
         time.sleep(2)
 
-        # 2. Image Insert (Strict Logic)
-        print("Clicking Image Icon...")
+        # --- 2. Image Insert ---
         page.click('#insertImage-1', force=True)
         time.sleep(3)
-
-        print("Clicking 'By URL'...")
-        by_url_btn = page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first
-        by_url_btn.click(force=True)
+        page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first.click(force=True)
         
-        # Multiple selectors for URL input to avoid timeout
-        print("Waiting for URL input box...")
-        url_input = page.locator('input[name="src"], .fr-link-input, input[placeholder*="URL"]').first
-        url_input.wait_for(state="visible", timeout=40000)
+        # URL input field load hone ka wait
+        url_input = page.locator('input[name="src"], .fr-image-by-url-layer input[type="text"]').first
+        url_input.wait_for(state="visible", timeout=30000)
         url_input.fill(direct_img_url)
-        time.sleep(2)
         page.keyboard.press("Enter")
-        
-        # Image load hone ka wait
         time.sleep(6) 
 
-        # 3. Bottom Content (No Link repetition)
+        # --- 3. Bottom Text (Sirf Desi Comment, No Link) ---
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n[SIZE=7][B]{bottom_text}[/B][/SIZE]")
-        time.sleep(2)
+        page.keyboard.type(f"\n[SIZE=7][B]Naya Fresh Item! 🔥[/B][/SIZE]")
+        page.keyboard.type(f"\n[SIZE=6][B]{bottom_text}[/B][/SIZE]")
 
-        # 4. Final Submit
-        print("Submitting Post...")
+        # --- 4. Submit ---
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
-        
-        page.wait_for_timeout(10000)
-        print("--- POST SUCCESSFUL ---")
+        page.wait_for_timeout(8000)
+        print("--- DESI POST SUCCESSFUL (LINK FIXED) ---")
         
     except Exception as e:
-        print(f"Error occurred: {e}")
-        page.screenshot(path="debug_timeout.png")
+        print(f"Error: {e}")
     finally:
         browser.close()
 
