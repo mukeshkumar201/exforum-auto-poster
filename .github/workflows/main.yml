@@ -1,10 +1,11 @@
-name: Hourly Poster image  # 'n' chota kar diya hai
+name: Hourly Poster image
 
 on:
   schedule:
-    # 20 min ka gap, lekin odd time par (Example: 7, 27, 47)
-    # Isse delay nahi hoga
-    - cron: '7,27,47 * * * *'
+    # Line 1: Har 3 ghante mein minute 17 par (00:17, 03:17, 06:17...)
+    - cron: '17 0,3,6,9,12,15,18,21 * * *'
+    # Line 2: Har 3 ghante mein minute 47 par (01:47, 04:47, 07:47...)
+    - cron: '47 1,4,7,10,13,16,19,22 * * *'
   push:
     branches:
       - main
@@ -32,7 +33,6 @@ jobs:
 
       - name: Run Bot
         env:
-          # Secrets check kar lena ki repo settings mein added hain
           EX_USER: ${{ secrets.EX_USER }}
           EX_PASS: ${{ secrets.EX_PASS }}
           EX_COOKIES: ${{ secrets.EX_COOKIES }}
@@ -46,6 +46,5 @@ jobs:
           git pull origin main --rebase || echo "Rebase not needed"
           touch posted_urls.txt
           git add posted_urls.txt
-          # [skip ci] bahut zaruri hai loop rokne ke liye
           git commit -m "Update history [skip ci]" || echo "No changes to commit"
           git push origin main
