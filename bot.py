@@ -7,33 +7,32 @@ HISTORY_FILE = "posted_urls.txt"
 PORN_SOURCE = "https://www.pornpics.com/tags/indian-pussy/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
-# 1. Desi Style Fillers (Ab bot lagega asli banda)
-FILLERS = [
-    "Dekho naya maal:", "Garmi badha di bhabhi ne:", "Mast jawani yahan dekho:", 
-    "Asli maza yahan hai:", "Jaldi aao dekho:", "Desi tadka full video:", 
-    "Ekdam fresh maal:", "Bhabhi ka jalwa dekho:", "Mast item yahan hai:", 
-    "Full maza lene ke liye aao:", "Naya desi update:"
+# 1. Top Desi Fillers (Inke saath domain variant aayega)
+TOP_FILLERS = [
+    "Dekho naya mast maal:", "Bhabhi ka jalwa yahan dekho:", "Garmi badhane wala item:", 
+    "Jaldi aao asli maza yahan hai:", "Ekdam fresh desi tadka:", "Bhabhi ki jawani dekh lo:"
 ]
 
-# 2. Advanced Caption Pool (Domain variants)
+# 2. Bottom Spicy Phrases (Isme LINK NAHI HAI, sirf comments hain)
+# Isse post real lagegi aur link repeat nahi hoga
+BOTTOM_PHRASES = [
+    "Maza aa gaya dekh ke! 🔥", "Kya mast cheez hai bhabhi! 🔞", "Ekdam kadak maal hai! 🌶️",
+    "Aisi bhabhi mil jaye toh din ban jaye! 💦", "Jawaani ekdam full hai! 🍑",
+    "Agli baar aur bhi khatarnak maal launga! 🔥", "Dekhte raho, maza aane wala hai! ❤️",
+    "Bhabhi ne toh aag laga di! 💥", "Kya item hai yaar! 😍"
+]
+
+# 3. Domain variants (Sirf top mein use honge)
 CAPTION_VARIANTS = [
     "freepornx [dot] site", "freepornx {dot} site", "freepornx (dot) site",
-    "freepornx | site", "f r e e p o r n x . s i t e", "f\u200Breepornx\u200B.\u200Bsite",
-    "freepornx [.] site", "freepornx ( . ) site", "freepornx / site",
-    "FreePornX.Site", "freepornx DOT site", "freepornx * site",
-    "freepornx ~ site", "freepornx ::: site", "f.r.e.e.p.o.r.n.x.s.i.t.e",
-    "freepornx @ site", "freepornx_site", "FrEePoRnX.SiTe",
-    "f-r-e-e-p-o-r-n-x-site", "freepornx [at] site", "freepornx [d-o-t] site", 
-    "freepornx ( . ) s i t e", "freepornx...site", "freepornx /// site", 
-    "freepornx -- site", "freepornx [[dot]] site", "freepornx <dot> site",
-    "freepornx [point] site", "freepornx (period) site", "freepornx !!! site",
-    "freepornx +++ site", "freepornx === site", "freepornx >>> site",
-    "freepornx [ d o t ] s i t e", "freepornx [at] s-i-t-e", "freepornx |-| site"
+    "f r e e p o r n x . s i t e", "f\u200Breepornx\u200B.\u200Bsite", "freepornx [.] site",
+    "freepornx DOT site", "freepornx * site", "freepornx ~ site", "freepornx @ site",
+    "freepornx_site", "f-r-e-e-p-o-r-n-x-site", "freepornx [at] site",
+    "freepornx ( . ) s i t e", "freepornx...site", "freepornx |-| site"
 ]
 
 def get_new_image():
-    # Scraper logic same rahega
-    print(f"--- Step 1: Scraping Image ---")
+    # Scraper logic for Indian Pussy (PornPics)
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
@@ -55,52 +54,49 @@ def get_new_image():
     except: return None
 
 def post_to_forum(p, direct_img_url):
-    # Har baar unique desi combo
-    top_text = f"{random.choice(FILLERS)} {random.choice(CAPTION_VARIANTS)}"
-    bottom_text = f"{random.choice(FILLERS)} {random.choice(CAPTION_VARIANTS)}"
+    # Logic: Top mein RANDOM Link, Bottom mein RANDOM Spicy Comment (No Link)
+    top_text = f"{random.choice(TOP_FILLERS)} {random.choice(CAPTION_VARIANTS)}"
+    bottom_text = random.choice(BOTTOM_PHRASES)
     
-    print(f"--- Step 2: Posting ---")
-    print(f"Top: {top_text} | Bottom: {bottom_text}")
+    print(f"--- Posting ---")
+    print(f"Top: {top_text}")
+    print(f"Bottom: {bottom_text}")
 
     browser = p.chromium.launch(headless=True)
-    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    
+    context = browser.new_context(user_agent="Mozilla/5.0")
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw: return
     context.add_cookies(json.loads(cookies_raw))
-    
     page = context.new_page()
-    page.set_default_timeout(60000)
     
     try:
         page.goto(THREAD_REPLY_URL, wait_until="networkidle")
         editor = page.locator('.fr-element').first
         editor.wait_for(state="visible")
 
-        # --- 1. Top Text (Desi style) ---
+        # 1. Top Content (Desi Filler + Random Link)
         editor.focus()
         page.keyboard.type(f"[SIZE=6][B]{top_text}[/B][/SIZE]\n")
         time.sleep(1)
 
-        # --- 2. Image Insert ---
+        # 2. Image Insert
         page.click('#insertImage-1', force=True)
-        page.wait_for_timeout(3000)
+        time.sleep(2)
         page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first.click(force=True)
-        page.locator('input[name="src"], .fr-image-by-url-layer input[type="text"]').first.fill(direct_img_url)
+        page.locator('input[name="src"]').first.fill(direct_img_url)
         page.keyboard.press("Enter")
         time.sleep(5) 
 
-        # --- 3. Bottom Text (Desi style) ---
+        # 3. Bottom Content (Sirf Spicy Desi Comment - Link Removed)
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n[SIZE=7][B]Naya Fresh Item! 🔥[/B][/SIZE]")
-        page.keyboard.type(f"\n[SIZE=6][B]{bottom_text}[/B][/SIZE]")
+        page.keyboard.type(f"\n[SIZE=7][B]{bottom_text}[/B][/SIZE]")
 
-        # --- 4. Submit ---
+        # 4. Final Submit
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         page.wait_for_timeout(8000)
-        print("--- DESI POST SUCCESSFUL ---")
+        print("--- POST SUCCESSFUL (RANDOMIZED) ---")
         
     except Exception as e:
         print(f"Error: {e}")
