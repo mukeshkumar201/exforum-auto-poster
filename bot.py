@@ -7,8 +7,8 @@ HISTORY_FILE = "posted_urls.txt"
 PORN_SOURCE = "https://www.pornpics.com/tags/indian-pussy/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
-# Tera Random Captions List
-CAPTIONS_LIST = [
+# Tera Random Caption Pool
+CAPTION_VARIANTS = [
     "freepornx [dot] site", "freepornx {dot} site", "freepornx (dot) site",
     "freepornx | site", "f r e e p o r n x . s i t e", "f\u200Breepornx\u200B.\u200Bsite",
     "freepornx [.] site", "freepornx ( . ) site", "freepornx / site",
@@ -19,9 +19,8 @@ CAPTIONS_LIST = [
 ]
 
 def get_new_image():
-    # ... (Keep your existing get_new_image function as it is) ...
-    print(f"--- Step 1: Scraping Image from {PORN_SOURCE} ---")
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    print(f"--- Step 1: Scraping Image ---")
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -42,17 +41,21 @@ def get_new_image():
     except: return None
 
 def post_to_forum(p, direct_img_url):
-    # Har post ke liye ek naya random caption pick karega
-    selected_caption = random.choice(CAPTIONS_LIST)
+    # --- YAHAN RANDOM SELECTION HOGA ---
+    # Top aur Bottom ke liye alag-alag random variant chunna
+    top_cap = random.choice(CAPTION_VARIANTS)
+    bottom_cap = random.choice(CAPTION_VARIANTS)
     
-    print(f"--- Step 2: Posting with Caption: {selected_caption} ---")
+    print(f"--- Step 2: Posting ---")
+    print(f"Top Caption: {top_cap} | Bottom Caption: {bottom_cap}")
+    
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
     cookies_raw = os.environ.get('EX_COOKIES')
     if not cookies_raw: return
-        
     context.add_cookies(json.loads(cookies_raw))
+    
     page = context.new_page()
     page.set_default_timeout(60000)
     
@@ -61,41 +64,33 @@ def post_to_forum(p, direct_img_url):
         editor = page.locator('.fr-element').first
         editor.wait_for(state="visible")
 
-        # --- ABOVE IMAGE: Random Text ---
+        # --- 1. Image ke UPAR Random Text ---
         editor.focus()
-        page.keyboard.type(f"[SIZE=6][B]visit website - {selected_caption}[/B][/SIZE]\n")
+        page.keyboard.type(f"[SIZE=6][B]visit website - {top_cap}[/B][/SIZE]\n")
         time.sleep(1)
 
-        # 1. Click Main Image Button
+        # --- 2. Image Insert Logic ---
         page.click('#insertImage-1', force=True)
         page.wait_for_timeout(3000)
-
-        # 2. Click 'By URL' Tab & Handle URL Input
-        # (Using your existing logic here for the popup)
-        by_url_tab = page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first
-        by_url_tab.click(force=True)
-        
+        page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first.click(force=True)
         page.locator('input[name="src"], .fr-image-by-url-layer input[type="text"]').first.fill(direct_img_url)
         page.keyboard.press("Enter")
         time.sleep(5) 
 
-        # --- BELOW IMAGE: Random Text ---
+        # --- 3. Image ke NICHE Random Text ---
         editor.focus()
         page.keyboard.press("Control+End")
-        # Niche wala caption thoda bada (SIZE 7) aur unique
         page.keyboard.type(f"\n[SIZE=7][B]New Fresh Desi Update! 🔥[/B][/SIZE]")
-        page.keyboard.type(f"\n[SIZE=6][B]visit website - {selected_caption}[/B][/SIZE]")
+        page.keyboard.type(f"\n[SIZE=6][B]visit website - {bottom_cap}[/B][/SIZE]")
 
-        # Submit
-        print("Submitting post...")
+        # --- 4. Submit ---
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
-        
-        page.wait_for_timeout(10000)
-        print("--- BOT TASK FINISHED SUCCESSFULLY ---")
+        page.wait_for_timeout(8000)
+        print("--- POST SUCCESSFUL ---")
         
     except Exception as e:
-        print(f"Forum Error: {e}")
+        print(f"Error: {e}")
     finally:
         browser.close()
 
