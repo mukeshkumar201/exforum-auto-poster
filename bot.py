@@ -77,28 +77,36 @@ def upload_and_post(p, used_wm):
     try:
         # 1. ImageBam Upload
         print("Opening ImageBam...")
-        page.goto("https://www.imagebam.com/", wait_until="networkidle", timeout=60000)
+        page.goto("https://www.imagebam.com/", wait_until="networkidle", timeout=90000)
         
         # File select
         page.set_input_files('input[type="file"]', 'final.jpg')
-        print("File selected.")
-        time.sleep(3)
+        print("File selected. Waiting for form elements...")
+        time.sleep(5)
 
-        # --- MANDATORY ADULT SELECTION ---
-        content_type_selector = 'select[name="content_type"]'
-        page.wait_for_selector(content_type_selector, state="visible", timeout=20000)
-        page.select_option(content_type_selector, '1') # '1' represents Adult content
-        print("Hamesha ke liye 'Adult' select kar liya gaya hai.")
+        # --- MANDATORY ADULT SELECTION (With Fallback) ---
+        try:
+            # Method 1: Dropdown by name
+            selector = 'select[name="content_type"]'
+            page.wait_for_selector(selector, state="visible", timeout=30000)
+            page.select_option(selector, '1') 
+            print("Selected 'Adult' via dropdown.")
+        except:
+            # Method 2: Click via label/text (Agar UI badal gaya ho)
+            print("Dropdown not found, trying text-based selection...")
+            page.locator("text=Adult content").first.click()
+            print("Clicked 'Adult content' label.")
+
         time.sleep(2)
 
         # Upload button click
-        upload_btn = page.locator('button:has-text("Start upload"), #btn-upload')
-        upload_btn.wait_for(state="visible", timeout=20000)
+        upload_btn = page.locator('button:has-text("Start upload"), #btn-upload, input[type="submit"]')
+        upload_btn.wait_for(state="visible", timeout=30000)
         upload_btn.click()
         print("Upload button clicked.")
 
         # Link extraction
-        page.wait_for_selector('textarea', timeout=60000)
+        page.wait_for_selector('textarea', timeout=90000)
         all_text = page.content()
         thumb_match = re.search(r'https://thumbs\d+\.imagebam\.com/[\w/]+_t\.(?:jpeg|jpg|png|webp)', all_text)
         
@@ -112,7 +120,7 @@ def upload_and_post(p, used_wm):
         print("Forum par ja rahe hain...")
         page.goto(THREAD_REPLY_URL, wait_until="domcontentloaded", timeout=60000)
         editor = page.locator('.fr-element')
-        editor.wait_for(state="visible", timeout=30000)
+        editor.wait_for(state="visible", timeout=40000)
         
         full_content = f"[IMG]{direct_url}[/IMG]\n\nFresh Update! 🔥\nCheck more: {used_wm}\n#Desi #Hot #Bhabhi"
         
@@ -127,7 +135,7 @@ def upload_and_post(p, used_wm):
 
     except Exception as e:
         print(f"Fatal Error: {e}")
-        page.screenshot(path="debug_error.png") # Agar fail ho toh photo dekh sakte hain
+        page.screenshot(path="debug_error.png") 
     finally:
         browser.close()
 
