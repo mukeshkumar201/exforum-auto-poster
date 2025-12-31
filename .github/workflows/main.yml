@@ -1,12 +1,14 @@
-name: Hourly Poster image
+name: Hourly Poster image  # 'n' chota kar diya hai
 
 on:
   schedule:
-    - cron: '*/20 * * * *' # Har 20 minute mein automatically chalega
+    # 20 min ka gap, lekin odd time par (Example: 7, 27, 47)
+    # Isse delay nahi hoga
+    - cron: '7,27,47 * * * *'
   push:
     branches:
-      - main           # Code save karte hi apne aap run hoga
-  workflow_dispatch:   # Manual button se run karne ke liye
+      - main
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -25,12 +27,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          # Watermark ke liye fonts aur browser deps zaruri hain
           sudo apt-get install -y fonts-dejavu-core
           python -m playwright install chromium --with-deps
 
       - name: Run Bot
         env:
+          # Secrets check kar lena ki repo settings mein added hain
           EX_USER: ${{ secrets.EX_USER }}
           EX_PASS: ${{ secrets.EX_PASS }}
           EX_COOKIES: ${{ secrets.EX_COOKIES }}
@@ -41,10 +43,9 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          # Purani history pull karo taaki push mein error na aaye
-          git pull origin main || echo "Nothing to pull"
+          git pull origin main --rebase || echo "Rebase not needed"
           touch posted_urls.txt
           git add posted_urls.txt
-          # [skip ci] ka use loop se bachne ke liye zaruri hai
+          # [skip ci] bahut zaruri hai loop rokne ke liye
           git commit -m "Update history [skip ci]" || echo "No changes to commit"
-          git push origin main || echo "No changes to push"
+          git push origin main
