@@ -7,7 +7,15 @@ HISTORY_FILE = "posted_urls.txt"
 PORN_SOURCE = "https://www.pornpics.com/tags/indian-pussy/"
 THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
 
-# Tera Random Caption Pool
+# 1. Desi Style Fillers (Ab bot lagega asli banda)
+FILLERS = [
+    "Dekho naya maal:", "Garmi badha di bhabhi ne:", "Mast jawani yahan dekho:", 
+    "Asli maza yahan hai:", "Jaldi aao dekho:", "Desi tadka full video:", 
+    "Ekdam fresh maal:", "Bhabhi ka jalwa dekho:", "Mast item yahan hai:", 
+    "Full maza lene ke liye aao:", "Naya desi update:"
+]
+
+# 2. Advanced Caption Pool (Domain variants)
 CAPTION_VARIANTS = [
     "freepornx [dot] site", "freepornx {dot} site", "freepornx (dot) site",
     "freepornx | site", "f r e e p o r n x . s i t e", "f\u200Breepornx\u200B.\u200Bsite",
@@ -15,10 +23,16 @@ CAPTION_VARIANTS = [
     "FreePornX.Site", "freepornx DOT site", "freepornx * site",
     "freepornx ~ site", "freepornx ::: site", "f.r.e.e.p.o.r.n.x.s.i.t.e",
     "freepornx @ site", "freepornx_site", "FrEePoRnX.SiTe",
-    "f-r-e-e-p-o-r-n-x-site", "freepornx [at] site"
+    "f-r-e-e-p-o-r-n-x-site", "freepornx [at] site", "freepornx [d-o-t] site", 
+    "freepornx ( . ) s i t e", "freepornx...site", "freepornx /// site", 
+    "freepornx -- site", "freepornx [[dot]] site", "freepornx <dot> site",
+    "freepornx [point] site", "freepornx (period) site", "freepornx !!! site",
+    "freepornx +++ site", "freepornx === site", "freepornx >>> site",
+    "freepornx [ d o t ] s i t e", "freepornx [at] s-i-t-e", "freepornx |-| site"
 ]
 
 def get_new_image():
+    # Scraper logic same rahega
     print(f"--- Step 1: Scraping Image ---")
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
@@ -41,14 +55,13 @@ def get_new_image():
     except: return None
 
 def post_to_forum(p, direct_img_url):
-    # --- YAHAN RANDOM SELECTION HOGA ---
-    # Top aur Bottom ke liye alag-alag random variant chunna
-    top_cap = random.choice(CAPTION_VARIANTS)
-    bottom_cap = random.choice(CAPTION_VARIANTS)
+    # Har baar unique desi combo
+    top_text = f"{random.choice(FILLERS)} {random.choice(CAPTION_VARIANTS)}"
+    bottom_text = f"{random.choice(FILLERS)} {random.choice(CAPTION_VARIANTS)}"
     
     print(f"--- Step 2: Posting ---")
-    print(f"Top Caption: {top_cap} | Bottom Caption: {bottom_cap}")
-    
+    print(f"Top: {top_text} | Bottom: {bottom_text}")
+
     browser = p.chromium.launch(headless=True)
     context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     
@@ -64,12 +77,12 @@ def post_to_forum(p, direct_img_url):
         editor = page.locator('.fr-element').first
         editor.wait_for(state="visible")
 
-        # --- 1. Image ke UPAR Random Text ---
+        # --- 1. Top Text (Desi style) ---
         editor.focus()
-        page.keyboard.type(f"[SIZE=6][B]visit website - {top_cap}[/B][/SIZE]\n")
+        page.keyboard.type(f"[SIZE=6][B]{top_text}[/B][/SIZE]\n")
         time.sleep(1)
 
-        # --- 2. Image Insert Logic ---
+        # --- 2. Image Insert ---
         page.click('#insertImage-1', force=True)
         page.wait_for_timeout(3000)
         page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first.click(force=True)
@@ -77,17 +90,17 @@ def post_to_forum(p, direct_img_url):
         page.keyboard.press("Enter")
         time.sleep(5) 
 
-        # --- 3. Image ke NICHE Random Text ---
+        # --- 3. Bottom Text (Desi style) ---
         editor.focus()
         page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n[SIZE=7][B]New Fresh Desi Update! 🔥[/B][/SIZE]")
-        page.keyboard.type(f"\n[SIZE=6][B]visit website - {bottom_cap}[/B][/SIZE]")
+        page.keyboard.type(f"\n[SIZE=7][B]Naya Fresh Item! 🔥[/B][/SIZE]")
+        page.keyboard.type(f"\n[SIZE=6][B]{bottom_text}[/B][/SIZE]")
 
         # --- 4. Submit ---
         submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
         submit_btn.click()
         page.wait_for_timeout(8000)
-        print("--- POST SUCCESSFUL ---")
+        print("--- DESI POST SUCCESSFUL ---")
         
     except Exception as e:
         print(f"Error: {e}")
