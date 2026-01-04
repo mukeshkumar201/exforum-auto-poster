@@ -1,114 +1,125 @@
-import os, requests, time, random, json
+import os, requests, time, random, json, io
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
+from PIL import Image, ImageDraw, ImageFont
 
 # --- Configuration ---
 HISTORY_FILE = "posted_urls.txt"
 PORN_SOURCE = "https://www.pornpics.com/tags/indian-pussy/"
-THREAD_REPLY_URL = "https://exforum.live/threads/desi-bhabhi.203220/reply"
+THREAD_REPLY_URL = "https://exforum.live/threads/office-party-mein-boss-ki-biwi-chodi-1.203512/reply"
 
-# 1. Top Desi Fillers (Inke saath domain variant aayega)
-TOP_FILLERS = [
-    "Dekho naya mast maal:", "Bhabhi ka jalwa yahan dekho:", "Garmi badhane wala item:", 
-    "Jaldi aao asli maza yahan hai:", "Ekdam fresh desi tadka:", "Bhabhi ki jawani dekh lo:"
-]
+IMGBB_API_KEY = os.environ.get('IMGBB_API_KEY')
+EX_COOKIES = os.environ.get('EX_COOKIES')
 
-# 2. Bottom Spicy Phrases (Strictly NO LINK - Sirf Comments)
-BOTTOM_PHRASES = [
-    "Maza aa gaya dekh ke! 🔥", "Kya mast cheez hai bhabhi! 🔞", "Ekdam kadak maal hai! 🌶️",
-    "Aisi bhabhi mil jaye toh din ban jaye! 💦", "Jawaani ekdam full hai! 🍑",
-    "Agli baar aur bhi khatarnak maal launga! 🔥", "Bhabhi ne toh aag laga di! 💥", "Kya item hai yaar! 😍"
-]
-
-# 3. Domain variants (Sirf top mein use honge)
-CAPTION_VARIANTS = [
-    "freepornx [dot] site", "freepornx {dot} site", "freepornx (dot) site",
-    "f r e e p o r n x . s i t e", "f\u200Breepornx\u200B.\u200Bsite", "freepornx [.] site",
-    "freepornx DOT site", "freepornx * site", "freepornx ~ site", "freepornx @ site",
-    "freepornx_site", "f-r-e-e-p-o-r-n-x-site", "freepornx [at] site"
-]
-
-def get_new_image():
-    print(f"--- Step 1: Scraping Image ---")
-    headers = {'User-Agent': 'Mozilla/5.0'}
+def add_watermark(image_bytes):
     try:
-        r = requests.get(PORN_SOURCE, headers=headers, timeout=30)
-        soup = BeautifulSoup(r.text, 'html.parser')
-        links = [a['href'] for a in soup.find_all('a', href=True) if "/galleries/" in a['href']]
-        if not links: return None
-        target_gal = random.choice(links)
-        target_gal = target_gal if target_gal.startswith('http') else "https://www.pornpics.com" + target_gal
-        r_gal = requests.get(target_gal, headers=headers, timeout=30)
-        gal_soup = BeautifulSoup(r_gal.text, 'html.parser')
-        posted = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
-        valid_imgs = [img.get('data-src') or img.get('src') for img in gal_soup.find_all('img') if "pornpics.com" in (img.get('data-src') or img.get('src', ''))]
-        new_imgs = [u if u.startswith('http') else "https:" + u for u in valid_imgs if u not in posted]
-        if new_imgs:
-            img_url = random.choice(new_imgs)
-            with open(HISTORY_FILE, "a") as f: f.write(img_url + "\n")
-            return img_url
+        img = Image.open(io.BytesIO(image_bytes))
+        if img.mode != 'RGB': img = img.convert('RGB')
+        draw = ImageDraw.Draw(img)
+        width, height = img.size
+        font_size = int(width * 0.05)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+        text = "freepornx.site"
+        bbox = draw.textbbox((0, 0), text, font=font)
+        x, y = width - (bbox[2]-bbox[0]) - 20, height - (bbox[3]-bbox[1]) - 20
+        draw.text((x+2, y+2), text, font=font, fill="black")
+        draw.text((x, y), text, font=font, fill="white")
+        img_io = io.BytesIO()
+        img.save(img_io, format='JPEG', quality=95)
+        return img_io.getvalue()
+    except: return None
+
+def upload_to_imgbb(img_bytes):
+    api_url = "https://api.imgbb.com/1/upload"
+    payload = {"key": IMGBB_API_KEY, "expiration": "0"}
+    files = {"image": ("image.jpg", img_bytes, "image/jpeg")}
+    try:
+        r = requests.post(api_url, data=payload, files=files)
+        res = r.json()
+        if res.get("status") == 200:
+            link = res["data"]["url"]
+            print(f"SUCCESS: ImgBB Link -> {link}")
+            return link
         return None
     except: return None
 
-def post_to_forum(p, direct_img_url):
-    # Har baar unique combo
-    top_text = f"{random.choice(TOP_FILLERS)} {random.choice(CAPTION_VARIANTS)}"
-    bottom_text = random.choice(BOTTOM_PHRASES)
-    
-    print(f"--- Step 2: Posting ---")
-    print(f"Top: {top_text} | Bottom: {bottom_text}")
+def get_processed_image():
+    print("--- Step 1: Scraping and Processing ---")
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    try:
+        r = requests.get(PORN_SOURCE, headers=headers)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        gal_links = [a['href'] for a in soup.find_all('a', href=True) if "/galleries/" in a['href']]
+        target = random.choice(gal_links)
+        if not target.startswith('http'): target = "https://www.pornpics.com" + target
+        
+        r_gal = requests.get(target, headers=headers)
+        gal_soup = BeautifulSoup(r_gal.text, 'html.parser')
+        posted = open(HISTORY_FILE, "r").read().splitlines() if os.path.exists(HISTORY_FILE) else []
+        
+        valid_imgs = [img.get('data-src') or img.get('src') for img in gal_soup.find_all('img') 
+                      if "pornpics.com" in (img.get('data-src') or img.get('src', ''))]
+        
+        new_imgs = [u if u.startswith('http') else "https:" + u for u in valid_imgs if u not in posted]
+        if new_imgs:
+            sel = random.choice(new_imgs)
+            print(f"Processing Image: {sel}")
+            raw = requests.get(sel).content
+            marked = add_watermark(raw)
+            if marked:
+                final = upload_to_imgbb(marked)
+                if final:
+                    with open(HISTORY_FILE, "a") as f: f.write(sel + "\n")
+                    return final
+        return None
+    except: return None
 
+def post_to_forum(p, hosted_url):
+    print("--- Step 4: Posting to Forum ---")
+    # Chrome jaisa behavior set kiya hai
     browser = p.chromium.launch(headless=True)
-    context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-    
-    cookies_raw = os.environ.get('EX_COOKIES')
-    if not cookies_raw: return
-    context.add_cookies(json.loads(cookies_raw))
-    
-    page = context.new_page()
-    page.set_default_timeout(60000)
+    context = browser.new_context(
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        viewport={'width': 1280, 'height': 720}
+    )
     
     try:
-        page.goto(THREAD_REPLY_URL, wait_until="networkidle")
+        cookies_list = json.loads(EX_COOKIES)
+        context.add_cookies(cookies_list)
+    except:
+        print("CRITICAL: Cookie JSON format error."); return
+
+    page = context.new_page()
+    try:
+        page.goto(THREAD_REPLY_URL, wait_until="networkidle", timeout=60000)
+        time.sleep(5)
+        
+        # New Login Check: Agar 'Log in' button dikh raha hai, toh login nahi hua
+        is_login_button = page.locator('a:has-text("Log in"), span:has-text("Log in")').first
+        if is_login_button.is_visible():
+            print(f"CRITICAL: Login Failed. Redirected to: {page.url}")
+            return
+
         editor = page.locator('.fr-element').first
-        editor.wait_for(state="visible")
-
-        # --- 1. Top Text (Filler + Domain) ---
+        editor.wait_for(state="visible", timeout=30000)
         editor.focus()
-        page.keyboard.type(f"[SIZE=6][B]{top_text}[/B][/SIZE]\n")
-        time.sleep(2)
-
-        # --- 2. Image Insert ---
-        page.click('#insertImage-1', force=True)
+        page.keyboard.type(f"[IMG]{hosted_url}[/IMG]")
         time.sleep(3)
-        page.locator('button[data-cmd="imageByURL"], .fr-popup button[data-cmd="imageByURL"]').first.click(force=True)
         
-        # URL input field load hone ka wait
-        url_input = page.locator('input[name="src"], .fr-image-by-url-layer input[type="text"]').first
-        url_input.wait_for(state="visible", timeout=30000)
-        url_input.fill(direct_img_url)
-        page.keyboard.press("Enter")
-        time.sleep(6) 
-
-        # --- 3. Bottom Text (Sirf Desi Comment, No Link) ---
-        editor.focus()
-        page.keyboard.press("Control+End")
-        page.keyboard.type(f"\n[SIZE=7][B]Naya Fresh Item! 🔥[/B][/SIZE]")
-        page.keyboard.type(f"\n[SIZE=6][B]{bottom_text}[/B][/SIZE]")
-
-        # --- 4. Submit ---
-        submit_btn = page.locator('button:has-text("Post reply"), .button--icon--reply').first
-        submit_btn.click()
-        page.wait_for_timeout(8000)
-        print("--- DESI POST SUCCESSFUL (LINK FIXED) ---")
-        
+        # Click Reply
+        page.locator('button:has-text("Post reply"), .button--icon--reply').first.click()
+        page.wait_for_timeout(10000)
+        print("--- SUCCESS: IMAGE POSTED ---")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Forum Error: {e}")
     finally:
         browser.close()
 
 if __name__ == "__main__":
     with sync_playwright() as playwright:
-        img_url = get_new_image()
-        if img_url:
-            post_to_forum(playwright, img_url)
+        link = get_processed_image()
+        if link:
+            post_to_forum(playwright, link)
