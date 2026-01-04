@@ -2,22 +2,17 @@ name: Hourly Poster image
 
 on:
   schedule:
-    # Line 1: Har 3 ghante mein minute 17 par (00:17, 03:17, 06:17...)
-    - cron: '17 0,3,6,9,12,15,18,21 * * *'
-    # Line 2: Har 3 ghante mein minute 47 par (01:47, 04:47, 07:47...)
-    - cron: '47 1,4,7,10,13,16,19,22 * * *'
-  push:
-    branches:
-      - main
+    - cron: '0 * * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -25,26 +20,29 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          pip install -r requirements.txt
-          sudo apt-get install -y fonts-dejavu-core
-          python -m playwright install chromium --with-deps
+          pip install requests beautifulsoup4 playwright Pillow
+          playwright install chromium --with-deps
 
       - name: Run Bot
         env:
-          EX_USER: ${{ secrets.EX_USER }}
-          EX_PASS: ${{ secrets.EX_PASS }}
           EX_COOKIES: ${{ secrets.EX_COOKIES }}
+          IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
         run: python bot.py
 
-      - name: Commit History
+      - name: Commit and Push History
         if: always()
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git pull origin main --rebase || echo "Rebase not needed"
+          
+          # Git pull error fix
+          git stash || echo "No changes to stash"
+          git pull origin main --rebase || echo "No rebase needed"
+          git stash pop || echo "Nothing to pop"
+          
           touch posted_urls.txt
           git add posted_urls.txt
-          git commit -m "Update history [skip ci]" || echo "No changes to commit"
+          git commit -m "Update history ***skip ci***" || echo "No changes"
           git push origin main
